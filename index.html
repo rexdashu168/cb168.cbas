@@ -1,1 +1,2377 @@
+<!DOCTYPE html>
 
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CBAS拆解整合系統 v1.0 | Rex大叔投資研究室</title>
+    <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { 
+            --primary: #2563eb; --primary-dark: #1d4ed8; --bg: #f8fafc; --text: #1e293b; --gray: #64748b; 
+            --border: #e2e8f0; --up: #dc2626; --down: #16a34a; 
+            --clickable: #eff6ff; --clickable-hover: #dbeafe; --clickable-border: #93c5fd;
+            --warning: #f59e0b; --info: #0ea5e9; --listed: #16a34a; --delisted: #94a3b8;
+            --cbas-primary: #7c3aed; --cbas-bg: #f5f3ff; --cbas-border: #c4b5fd;
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+        @media(min-width: 1600px) { .container { max-width: 1800px; } }
+
+```
+    /* 載入畫面 */
+    .loading { position: fixed; top:0; left:0; right:0; bottom:0; background: var(--bg); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.3s; }
+    .loading.hidden { opacity: 0; pointer-events: none; }
+    .loading.removed { display: none; }
+    .spinner { width: 48px; height: 48px; border: 4px solid #e0e0e0; border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .load-progress { width: 280px; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin-top: 16px; }
+    .load-progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--cbas-primary)); width: 0%; transition: width 0.3s; }
+
+    /* 更新提示 */
+    .update-toast { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.85); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; z-index: 1000; opacity: 0; transform: translateY(20px); transition: all 0.3s; }
+    .update-toast.show { opacity: 1; transform: translateY(0); }
+
+    /* 頁首 */
+    .header { background: linear-gradient(135deg, var(--primary) 0%, var(--cbas-primary) 100%); color: #fff; padding: 24px; border-radius: 16px; margin-bottom: 20px; box-shadow: var(--card-shadow); }
+    .header h1 { font-size: 26px; font-weight: 800; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+    .header h1 .icon { font-size: 32px; }
+    .header .subtitle { opacity: 0.9; font-size: 14px; }
+    .header .version { display: inline-block; background: rgba(255,255,255,0.2); font-size: 12px; padding: 3px 10px; border-radius: 12px; margin-left: 10px; }
+
+    /* 主選單 */
+    .main-nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 12px; box-shadow: var(--card-shadow); }
+    .nav-item { padding: 12px 20px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; border: 2px solid transparent; background: var(--bg); color: var(--gray); transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
+    .nav-item:hover { background: var(--clickable); border-color: var(--clickable-border); color: var(--primary); }
+    .nav-item.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .nav-item.cbas { background: var(--cbas-bg); border-color: var(--cbas-border); }
+    .nav-item.cbas:hover { background: #ede9fe; }
+    .nav-item.cbas.active { background: var(--cbas-primary); color: #fff; border-color: var(--cbas-primary); }
+    .nav-item .badge { background: rgba(0,0,0,0.1); padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    .nav-item.active .badge { background: rgba(255,255,255,0.3); }
+
+    /* 統計卡片區 */
+    .stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .stat-card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: var(--card-shadow); text-align: center; transition: transform 0.2s, box-shadow 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .stat-card.clickable { cursor: pointer; }
+    .stat-card.active { border: 2px solid var(--primary); background: var(--clickable); }
+    .stat-card .icon { font-size: 28px; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: 800; color: var(--primary); font-family: 'Menlo', 'Monaco', monospace; }
+    .stat-card .label { font-size: 13px; color: var(--gray); margin-top: 4px; }
+    .stat-card.cbas .value { color: var(--cbas-primary); }
+
+    /* 內容區塊 */
+    .content-section { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: var(--card-shadow); }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+    .section-title { font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 10px; }
+    .section-title .icon { font-size: 22px; }
+
+    /* 搜尋區 */
+    .search-box { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .search-input { flex: 1; min-width: 200px; max-width: 350px; padding: 12px 16px; border-radius: 10px; border: 2px solid var(--border); font-size: 15px; outline: none; transition: border-color 0.2s; }
+    .search-input:focus { border-color: var(--primary); }
+    .search-btn { padding: 12px 24px; border-radius: 10px; border: none; background: var(--primary); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
+    .search-btn:hover { background: var(--primary-dark); }
+
+    /* 篩選標籤 */
+    .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-tab { padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--gray); transition: all 0.2s; }
+    .filter-tab:hover { border-color: var(--primary); background: var(--clickable); color: var(--primary); }
+    .filter-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .filter-tab.cbas.active { background: var(--cbas-primary); border-color: var(--cbas-primary); }
+
+    /* 時間篩選 */
+    .period-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .period-tab { padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--gray); transition: all 0.2s; }
+    .period-tab:hover { border-color: var(--primary); }
+    .period-tab.active { background: var(--info); color: #fff; border-color: var(--info); }
+
+    /* 表格樣式 */
+    .table-container { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); font-weight: 700; position: sticky; top: 0; cursor: pointer; user-select: none; text-align: center; color: var(--text); }
+    th:hover { background: #e2e8f0; }
+    th.sorted-asc::after { content: ' ▲'; color: var(--primary); font-size: 10px; }
+    th.sorted-desc::after { content: ' ▼'; color: var(--primary); font-size: 10px; }
+    tbody tr { transition: background 0.15s; }
+    tbody tr:hover { background: var(--clickable); cursor: pointer; }
+    tbody tr:nth-child(even) { background: #fafbfc; }
+    tbody tr:nth-child(even):hover { background: var(--clickable); }
+    .code { color: var(--primary); font-weight: 700; font-family: 'Menlo', monospace; }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .mono { font-family: 'Menlo', 'Monaco', monospace; }
+
+    /* CBAS 特殊標記 */
+    .cbas-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .cbas-badge.has-cbas { background: var(--cbas-bg); color: var(--cbas-primary); border: 1px solid var(--cbas-border); }
+    .cbas-badge.no-cbas { background: #f1f5f9; color: var(--gray); }
+    
+    /* 權利金顏色標記 */
+    .premium-high { background: rgba(220, 38, 38, 0.08); }
+    .premium-mid { background: rgba(245, 158, 11, 0.08); }
+    .premium-low { background: rgba(22, 163, 74, 0.08); }
+
+    /* 彈窗 */
+    .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+    .modal.show { display: flex; }
+    .modal-content { background: #fff; border-radius: 16px; max-width: 1000px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+    .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--primary) 0%, var(--cbas-primary) 100%); color: #fff; }
+    .modal-header h3 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .modal-close { width: 36px; height: 36px; border-radius: 50%; border: none; background: rgba(255,255,255,0.2); color: #fff; font-size: 20px; cursor: pointer; transition: background 0.2s; }
+    .modal-close:hover { background: rgba(255,255,255,0.3); }
+    .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+
+    /* 詳細資料區塊 */
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .detail-card { background: var(--bg); padding: 16px; border-radius: 10px; }
+    .detail-card .label { font-size: 12px; color: var(--gray); margin-bottom: 4px; }
+    .detail-card .value { font-size: 18px; font-weight: 700; color: var(--text); }
+    .detail-card .value.highlight { color: var(--primary); }
+    .detail-card .value.cbas { color: var(--cbas-primary); }
+
+    /* CBAS歷史圖表區 */
+    .chart-container { background: var(--bg); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .chart-container canvas { width: 100%; height: 300px; }
+
+    /* 分頁 */
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 20px; }
+    .pagination button { padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+    .pagination button:hover:not(:disabled) { border-color: var(--primary); background: var(--clickable); }
+    .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .pagination .page-info { font-size: 14px; color: var(--gray); }
+
+    /* 空狀態 */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--gray); }
+    .empty-state .icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state .message { font-size: 16px; margin-bottom: 8px; }
+    .empty-state .hint { font-size: 13px; opacity: 0.7; }
+
+    /* 快速篩選按鈕組 */
+    .quick-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .quick-filter { padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--gray); transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+    .quick-filter:hover { border-color: var(--primary); background: var(--clickable); }
+    .quick-filter.active { background: var(--info); color: #fff; border-color: var(--info); }
+    .quick-filter .count { background: rgba(0,0,0,0.08); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .quick-filter.active .count { background: rgba(255,255,255,0.3); }
+
+    /* CBAS統計區 */
+    .cbas-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .cbas-stat-card { background: linear-gradient(135deg, var(--cbas-bg) 0%, #ede9fe 100%); padding: 20px; border-radius: 12px; border: 1px solid var(--cbas-border); }
+    .cbas-stat-card .title { font-size: 14px; font-weight: 600; color: var(--cbas-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .cbas-stat-card .main-value { font-size: 32px; font-weight: 800; color: var(--cbas-primary); font-family: 'Menlo', monospace; }
+    .cbas-stat-card .sub-info { font-size: 13px; color: var(--gray); margin-top: 8px; }
+
+    /* 排行榜樣式 */
+    .ranking-list { }
+    .ranking-item { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+    .ranking-item:last-child { border-bottom: none; }
+    .ranking-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .ranking-num.top1 { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #fff; }
+    .ranking-num.top2 { background: linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%); color: #fff; }
+    .ranking-num.top3 { background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #fff; }
+    .ranking-num.normal { background: var(--bg); color: var(--gray); }
+    .ranking-info { flex: 1; }
+    .ranking-info .name { font-weight: 600; color: var(--text); }
+    .ranking-info .code { font-size: 12px; color: var(--gray); font-family: 'Menlo', monospace; }
+    .ranking-value { text-align: right; }
+    .ranking-value .main { font-size: 18px; font-weight: 700; color: var(--cbas-primary); font-family: 'Menlo', monospace; }
+    .ranking-value .sub { font-size: 12px; color: var(--gray); }
+
+    /* 響應式 */
+    @media(max-width: 768px) {
+        .header h1 { font-size: 20px; }
+        .nav-item { padding: 10px 14px; font-size: 13px; }
+        .stats-cards { grid-template-columns: repeat(2, 1fr); }
+        .stat-card { padding: 14px; }
+        .stat-card .value { font-size: 22px; }
+        .detail-grid { grid-template-columns: 1fr 1fr; }
+        .hide-mobile { display: none; }
+    }
+
+    .hidden { display: none !important; }
+
+    /* 統計分析報告樣式 */
+    .research-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f59e0b; }
+    .research-tab { padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; color: #92400e; border: 1px solid #fcd34d; transition: all 0.2s; }
+    .research-tab:hover { background: #fef3c7; }
+    .research-tab.active { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    
+    .research-content { line-height: 1.8; color: #1e293b; }
+    .research-content h2 { font-size: 20px; font-weight: 700; color: #92400e; margin: 24px 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #fcd34d; }
+    .research-content h3 { font-size: 17px; font-weight: 600; color: #b45309; margin: 20px 0 12px 0; }
+    .research-content p { margin: 12px 0; }
+    .research-content ul { margin: 12px 0; padding-left: 24px; }
+    .research-content li { margin: 8px 0; }
+    
+    .insight-box { background: #fff; border-radius: 12px; padding: 20px; margin: 16px 0; border-left: 4px solid #f59e0b; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .insight-box.warning { border-left-color: #dc2626; background: #fef2f2; }
+    .insight-box.success { border-left-color: #16a34a; background: #f0fdf4; }
+    .insight-box.info { border-left-color: #2563eb; background: #eff6ff; }
+    .insight-box .title { font-weight: 700; font-size: 15px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .insight-box.warning .title { color: #dc2626; }
+    .insight-box.success .title { color: #16a34a; }
+    .insight-box.info .title { color: #2563eb; }
+    
+    .data-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; background: #fff; border-radius: 8px; overflow: hidden; }
+    .data-table th { background: #fef3c7; color: #92400e; padding: 12px 10px; text-align: center; font-weight: 600; }
+    .data-table td { padding: 10px; border-bottom: 1px solid #fde68a; text-align: center; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table .highlight { background: #fef3c7; font-weight: 600; }
+    
+    .risk-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .risk-indicator.safe { background: #dcfce7; color: #16a34a; }
+    .risk-indicator.caution { background: #fef3c7; color: #b45309; }
+    .risk-indicator.warning { background: #fee2e2; color: #dc2626; }
+    .risk-indicator.danger { background: #dc2626; color: #fff; }
+
+    /* 智慧提示樣式 */
+    .smart-tip { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; border-radius: 10px; padding: 14px 18px; margin: 12px 0; display: flex; align-items: flex-start; gap: 12px; }
+    .smart-tip .icon { font-size: 20px; flex-shrink: 0; }
+    .smart-tip .content { flex: 1; }
+    .smart-tip .title { font-weight: 700; color: #92400e; margin-bottom: 4px; }
+    .smart-tip .desc { font-size: 13px; color: #78350f; }
+    .smart-tip.danger { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border-color: #dc2626; }
+    .smart-tip.danger .title { color: #dc2626; }
+    .smart-tip.danger .desc { color: #991b1b; }
+    .smart-tip.success { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); border-color: #16a34a; }
+    .smart-tip.success .title { color: #16a34a; }
+    .smart-tip.success .desc { color: #166534; }
+</style>
+```
+
+</head>
+<body>
+
+<div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div id="loadStatus">系統啟動中...</div>
+    <div class="load-progress"><div class="load-progress-bar" id="loadProgressBar"></div></div>
+</div>
+
+<div class="update-toast" id="updateToast"></div>
+
+<div class="container">
+    <div class="header">
+        <h1><span class="icon">📊</span> CBAS拆解整合系統 <span class="version">v1.0</span></h1>
+        <div class="subtitle">可轉債資產交換分析 × 價格整合查詢 | Rex大叔投資研究室</div>
+    </div>
+
+```
+<div class="main-nav" id="mainNav">
+    <div class="nav-item active" onclick="setMode('overview')"><span>📈</span> 總覽儀表板</div>
+    <div class="nav-item cbas" onclick="setMode('cbas')"><span>🔄</span> CBAS拆解查詢</div>
+    <div class="nav-item cbas" onclick="setMode('cbasRanking')"><span>🏆</span> CBAS排行榜</div>
+    <div class="nav-item" onclick="setMode('price')"><span>💰</span> 價格查詢</div>
+    <div class="nav-item" onclick="setMode('kanban')"><span>📋</span> 看板資訊</div>
+    <div class="nav-item" onclick="setMode('stock')"><span>🔍</span> 個股深度分析</div>
+    <div class="nav-item" onclick="setMode('research')" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#f59e0b;color:#92400e;"><span>📚</span> 統計分析報告</div>
+</div>
+
+<!-- 總覽儀表板 -->
+<div id="overviewSection">
+    <div class="stats-cards" id="overviewStats"></div>
+    
+    <!-- 統計智慧提示區 -->
+    <div class="content-section" style="background:linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%);border:1px solid #f59e0b;margin-bottom:20px;">
+        <div class="section-title" style="color:#92400e;margin-bottom:16px;">
+            <span class="icon">🧠</span> 15年統計智慧提示
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+            <div class="smart-tip success" style="margin:0;">
+                <div class="icon">🛡️</div>
+                <div class="content">
+                    <div class="title">安全邊際：110元是關鍵</div>
+                    <div class="desc">110元以下買入，虧>10%僅0.6-1.9%；破底買入獲利率82.1%</div>
+                </div>
+            </div>
+            <div class="smart-tip danger" style="margin:0;">
+                <div class="icon">⚠️</div>
+                <div class="content">
+                    <div class="title">風險警示：130元是分水嶺</div>
+                    <div class="desc">130元買入被套機率94.1%，虧>20%機率達25%</div>
+                </div>
+            </div>
+            <div class="smart-tip" style="margin:0;">
+                <div class="icon">🎯</div>
+                <div class="content">
+                    <div class="title">主力出場區間：127-145元</div>
+                    <div class="desc">餘額減半時CB價格中位數142元，可考慮分批停利</div>
+                </div>
+            </div>
+        </div>
+        <div style="text-align:right;margin-top:12px;">
+            <span style="font-size:12px;color:#78350f;cursor:pointer;" onclick="setMode('research')">📚 查看完整統計報告 →</span>
+        </div>
+    </div>
+    
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">🔥</span> 今日CBAS交易熱門</div>
+            <div class="period-tabs">
+                <div class="period-tab active" onclick="setOverviewPeriod('today')">今日</div>
+                <div class="period-tab" onclick="setOverviewPeriod('week')">本週</div>
+                <div class="period-tab" onclick="setOverviewPeriod('month')">本月</div>
+            </div>
+        </div>
+        <div id="todayCbasRanking"></div>
+    </div>
+
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">📊</span> CBAS市場統計</div>
+        </div>
+        <div class="cbas-stats-grid" id="cbasMarketStats"></div>
+    </div>
+</div>
+
+<!-- CBAS拆解查詢 -->
+<div id="cbasSection" class="hidden">
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">🔄</span> CBAS拆解交易查詢</div>
+            <div class="search-box">
+                <input type="text" class="search-input" id="cbasSearch" placeholder="搜尋CB代號或名稱...">
+                <button class="search-btn" onclick="searchCbas()"><span>🔍</span> 搜尋</button>
+            </div>
+        </div>
+        
+        <div class="quick-filters" id="cbasQuickFilters">
+            <div class="quick-filter active" onclick="setCbasFilter('all')">全部</div>
+            <div class="quick-filter" onclick="setCbasFilter('highPremium')">🔥 高權利金 <span class="count" id="highPremiumCount">-</span></div>
+            <div class="quick-filter" onclick="setCbasFilter('highVolume')">📊 大額交易 <span class="count" id="highVolumeCount">-</span></div>
+            <div class="quick-filter" onclick="setCbasFilter('frequent')">🔄 頻繁交易 <span class="count" id="frequentCount">-</span></div>
+        </div>
+
+        <div class="filter-tabs" style="margin-bottom:16px">
+            <div class="filter-tab active" onclick="setCbasPeriod('all')">全部期間</div>
+            <div class="filter-tab" onclick="setCbasPeriod('2025')">2025</div>
+            <div class="filter-tab" onclick="setCbasPeriod('2024')">2024</div>
+            <div class="filter-tab" onclick="setCbasPeriod('2023')">2023</div>
+            <div class="filter-tab" onclick="setCbasPeriod('2022')">2022</div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortCbasTable('code')">代號</th>
+                        <th onclick="sortCbasTable('name')">名稱</th>
+                        <th onclick="sortCbasTable('date')" class="hide-mobile">日期</th>
+                        <th onclick="sortCbasTable('notional')" class="text-right">名目本金</th>
+                        <th onclick="sortCbasTable('trades')" class="text-right">成交筆數</th>
+                        <th onclick="sortCbasTable('premiumAvg')" class="text-right">平均權利金</th>
+                        <th onclick="sortCbasTable('premiumLow')" class="text-right hide-mobile">最低權利金</th>
+                        <th onclick="sortCbasTable('premiumHigh')" class="text-right hide-mobile">最高權利金</th>
+                        <th onclick="sortCbasTable('term')" class="text-right">契約期間</th>
+                    </tr>
+                </thead>
+                <tbody id="cbasTableBody"></tbody>
+            </table>
+        </div>
+        <div class="pagination" id="cbasPagination"></div>
+    </div>
+</div>
+
+<!-- CBAS排行榜 -->
+<div id="cbasRankingSection" class="hidden">
+    <div class="cbas-stats-grid">
+        <div class="cbas-stat-card">
+            <div class="title"><span>💎</span> 累計拆解名目本金</div>
+            <div class="main-value" id="totalNotional">-</div>
+            <div class="sub-info" id="totalNotionalInfo">-</div>
+        </div>
+        <div class="cbas-stat-card">
+            <div class="title"><span>🔄</span> 累計拆解筆數</div>
+            <div class="main-value" id="totalTrades">-</div>
+            <div class="sub-info" id="totalTradesInfo">-</div>
+        </div>
+        <div class="cbas-stat-card">
+            <div class="title"><span>📊</span> 平均權利金</div>
+            <div class="main-value" id="avgPremium">-</div>
+            <div class="sub-info" id="avgPremiumInfo">-</div>
+        </div>
+    </div>
+
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">🏆</span> 名目本金排行榜</div>
+            <div class="period-tabs">
+                <div class="period-tab active" onclick="setRankingPeriod('all')">全部</div>
+                <div class="period-tab" onclick="setRankingPeriod('2025')">2025</div>
+                <div class="period-tab" onclick="setRankingPeriod('2024')">2024</div>
+                <div class="period-tab" onclick="setRankingPeriod('2023')">2023</div>
+            </div>
+        </div>
+        <div class="ranking-list" id="notionalRanking"></div>
+    </div>
+
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">🔥</span> 權利金排行榜</div>
+        </div>
+        <div class="ranking-list" id="premiumRanking"></div>
+    </div>
+</div>
+
+<!-- 價格查詢 -->
+<div id="priceSection" class="hidden">
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">💰</span> CB價格查詢</div>
+            <div class="search-box">
+                <input type="text" class="search-input" id="priceSearch" placeholder="搜尋CB代號或名稱..." oninput="filterPriceTable()">
+            </div>
+        </div>
+
+        <div class="quick-filters">
+            <div class="quick-filter active" onclick="setPriceFilter('all')">全部 <span class="count" id="priceAllCount">-</span></div>
+            <div class="quick-filter" onclick="setPriceFilter('discount')">🔥 折價 <span class="count" id="discountCount">-</span></div>
+            <div class="quick-filter" onclick="setPriceFilter('lowPremium')">💎 低溢價 <span class="count" id="lowPremiumCount">-</span></div>
+            <div class="quick-filter" onclick="setPriceFilter('hasCbas')">🔄 有CBAS <span class="count" id="hasCbasCount">-</span></div>
+        </div>
+
+        <!-- 風險統計提示面板 -->
+        <div id="priceRiskPanel" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #f59e0b;border-radius:10px;padding:14px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;">
+            <div style="font-weight:700;color:#92400e;display:flex;align-items:center;gap:6px;">
+                <span>📊</span> 風險分布
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;">
+                <span style="color:#16a34a;">🟢 安全區(<110): <strong id="riskSafeCount">-</strong></span>
+                <span style="color:#f59e0b;">🟡 轉折區(110-120): <strong id="riskCautionCount">-</strong></span>
+                <span style="color:#f97316;">🟠 警戒區(120-130): <strong id="riskWarningCount">-</strong></span>
+                <span style="color:#dc2626;">🔴 高風險(≥130): <strong id="riskDangerCount">-</strong></span>
+            </div>
+            <div style="font-size:12px;color:#78350f;margin-left:auto;cursor:pointer;" onclick="setMode('research')">
+                📚 查看完整統計報告 →
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortPriceTable('code')">代號</th>
+                        <th onclick="sortPriceTable('name')">名稱</th>
+                        <th onclick="sortPriceTable('close')" class="text-right">收盤價</th>
+                        <th onclick="sortPriceTable('change')" class="text-right">漲跌</th>
+                        <th onclick="sortPriceTable('changePct')" class="text-right">漲跌%</th>
+                        <th onclick="sortPriceTable('close')" class="text-center" title="根據15年統計數據的風險評估">風險等級</th>
+                        <th onclick="sortPriceTable('high')" class="text-right hide-mobile">最高</th>
+                        <th onclick="sortPriceTable('low')" class="text-right hide-mobile">最低</th>
+                        <th class="text-center">CBAS</th>
+                    </tr>
+                </thead>
+                <tbody id="priceTableBody"></tbody>
+            </table>
+        </div>
+        <div class="pagination" id="pricePagination"></div>
+    </div>
+</div>
+
+<!-- 看板資訊 -->
+<div id="kanbanSection" class="hidden">
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">📋</span> CB看板資訊</div>
+            <div class="search-box">
+                <input type="text" class="search-input" id="kanbanSearch" placeholder="搜尋CB代號或名稱..." oninput="filterKanbanTable()">
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortKanbanTable('code')">代號</th>
+                        <th onclick="sortKanbanTable('name')">名稱</th>
+                        <th onclick="sortKanbanTable('convPrice')" class="text-right">轉換價</th>
+                        <th onclick="sortKanbanTable('convStart')" class="hide-mobile">轉換起日</th>
+                        <th onclick="sortKanbanTable('convEnd')" class="hide-mobile">轉換迄日</th>
+                        <th onclick="sortKanbanTable('putDate')" class="hide-mobile">賣回權日</th>
+                        <th onclick="sortKanbanTable('putPrice')" class="text-right hide-mobile">賣回價格</th>
+                        <th onclick="sortKanbanTable('balance')" class="text-right">發行餘額</th>
+                        <th onclick="sortKanbanTable('cbPrice')" class="text-right">轉債價格</th>
+                        <th onclick="sortKanbanTable('stockPrice')" class="text-right">股票價格</th>
+                    </tr>
+                </thead>
+                <tbody id="kanbanTableBody"></tbody>
+            </table>
+        </div>
+        <div class="pagination" id="kanbanPagination"></div>
+    </div>
+</div>
+
+<!-- 個股深度分析 -->
+<div id="stockSection" class="hidden">
+    <div class="content-section">
+        <div class="section-header">
+            <div class="section-title"><span class="icon">🔍</span> 個股深度分析</div>
+            <div class="search-box">
+                <input type="text" class="search-input" id="stockCodeInput" placeholder="輸入CB代號，例如：49232" onkeyup="if(event.key==='Enter')loadStockAnalysis()">
+                <button class="search-btn" onclick="loadStockAnalysis()"><span>🔍</span> 分析</button>
+            </div>
+        </div>
+        <div id="stockAnalysisResult">
+            <div class="empty-state">
+                <div class="icon">🔍</div>
+                <div class="message">輸入CB代號進行深度分析</div>
+                <div class="hint">整合CBAS拆解、價格走勢、看板資訊的完整分析</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 統計分析報告 -->
+<div id="researchSection" class="hidden">
+    <div class="content-section" style="background:linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%);border:1px solid #f59e0b;">
+        <div class="section-title" style="color:#92400e;margin-bottom:20px;">
+            <span class="icon">📚</span> CB價格風險基礎系列 - 統計分析報告
+        </div>
+        <div class="research-nav">
+            <div class="research-tab active" onclick="setResearchTab('summary')">📊 智慧摘要</div>
+            <div class="research-tab" onclick="setResearchTab('report1')">專題1-1 各價位風險全景</div>
+            <div class="research-tab" onclick="setResearchTab('report2')">專題1-2 130元臨界點</div>
+            <div class="research-tab" onclick="setResearchTab('report3')">專題1-3 高價區間風險</div>
+            <div class="research-tab" onclick="setResearchTab('report4')">專題1-4 低價安全邊際</div>
+            <div class="research-tab" onclick="setResearchTab('report5')">專題1-2-1 CBAS主力追蹤</div>
+        </div>
+        <div id="researchContent"></div>
+    </div>
+</div>
+```
+
+</div>
+
+<!-- 詳細資料彈窗 -->
+
+<div class="modal" id="detailModal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle"><span>📊</span> CB詳細資料</h3>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<script>
+// ==================== 全域變數 ====================
+const DB = {
+    cbas: {},           // CBAS拆解資料 {code: [{date, notional, trades, premiumLow, premiumHigh, premiumAvg, term}]}
+    cbasDaily: {},      // 每日CBAS彙總 {dateNum: [{code, name, ...}]}
+    price: {},          // 價格資料 {code: [{date, open, high, low, close, change, volume}]}
+    priceLatest: {},    // 最新價格 {code: {date, close, change, ...}}
+    kanban: {},         // 看板資料 {code: {convPrice, convStart, convEnd, ...}}
+    kanbanLatest: {},   // 最新看板 {code: {...}}
+    cbInfo: {},         // CB基本資料
+    listedCodes: new Set()
+};
+
+const META = {
+    cbasYearsLoaded: {},
+    priceYearsLoaded: {},
+    kanbanYearsLoaded: {},
+    latestCbasDate: null,
+    latestPriceDate: null
+};
+
+let MODE = 'overview';
+let CBAS_FILTER = 'all';
+let CBAS_PERIOD = 'all';
+let CBAS_SORT = { field: 'date', dir: 'desc' };
+let CBAS_PAGE = { current: 1, size: 50 };
+
+let PRICE_FILTER = 'all';
+let PRICE_SORT = { field: 'code', dir: 'asc' };
+let PRICE_PAGE = { current: 1, size: 50 };
+
+let KANBAN_SORT = { field: 'code', dir: 'asc' };
+let KANBAN_PAGE = { current: 1, size: 50 };
+
+let OVERVIEW_PERIOD = 'today';
+let RANKING_PERIOD = 'all';
+
+const currentYear = new Date().getFullYear();
+
+// ==================== 初始化 ====================
+async function init() {
+    try {
+        updateLoadStatus('載入基本資料...', 5);
+        await loadCbInfo();
+        
+        updateLoadStatus('載入CBAS資料...', 20);
+        await loadCbasData([currentYear, currentYear - 1]);
+        
+        updateLoadStatus('載入價格資料...', 50);
+        await loadPriceData([currentYear]);
+        
+        updateLoadStatus('載入看板資料...', 80);
+        await loadKanbanData([currentYear]);
+        
+        updateLoadStatus('初始化完成', 100);
+        
+        setTimeout(() => {
+            document.getElementById('loading').classList.add('hidden');
+            renderOverview();
+        }, 300);
+    } catch(e) {
+        console.error('初始化失敗:', e);
+        updateLoadStatus('載入失敗: ' + e.message, 0);
+    }
+}
+
+function updateLoadStatus(msg, progress) {
+    document.getElementById('loadStatus').textContent = msg;
+    document.getElementById('loadProgressBar').style.width = progress + '%';
+}
+
+function showToast(msg) {
+    const t = document.getElementById('updateToast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ==================== 資料載入 ====================
+async function loadCbInfo() {
+    try {
+        const res = await fetch('data/00_CB.xlsx');
+        if (!res.ok) return;
+        const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellDates: true });
+        
+        // 載入CB基本資料 (01_ALLCB基本資料)
+        const basicSheet = wb.SheetNames.find(n => n.includes('ALLCB基本資料'));
+        if (basicSheet && wb.Sheets[basicSheet]) {
+            XLSX.utils.sheet_to_json(wb.Sheets[basicSheet]).forEach(r => {
+                const code = String(r['CB代號'] || '').trim();
+                if (!code || code.length < 4) return;
+                DB.cbInfo[code] = {
+                    name: r['CB名稱'] || '',
+                    stockCode: String(r['股票代號'] || '').replace(/\.0$/, ''),
+                    stockName: r['股票名稱'] || '',
+                    industry: '',
+                    guarantee: r['擔保'] || '無擔保'
+                };
+            });
+        }
+        
+        // 載入產業分類 (16_產業分類)
+        const industrySheet = wb.SheetNames.find(n => n.includes('產業分類'));
+        if (industrySheet && wb.Sheets[industrySheet]) {
+            XLSX.utils.sheet_to_json(wb.Sheets[industrySheet]).forEach(r => {
+                const code = String(r['CB代號'] || '').trim();
+                if (code && DB.cbInfo[code]) {
+                    DB.cbInfo[code].industry = r['產業'] || '';
+                }
+            });
+        }
+        
+        // 載入掛牌中清單 (08_最新動態每週基本資料)
+        const listSheet = wb.SheetNames.find(n => n.includes('最新動態每週基本資料'));
+        if (listSheet && wb.Sheets[listSheet]) {
+            XLSX.utils.sheet_to_json(wb.Sheets[listSheet]).forEach(r => {
+                const code = String(r['代號'] || '').trim();
+                if (code) DB.listedCodes.add(code);
+            });
+        }
+    } catch(e) {
+        console.error('載入CB基本資料失敗:', e);
+    }
+}
+
+async function loadCbasData(years) {
+    for (const year of years) {
+        if (META.cbasYearsLoaded[year]) continue;
+        try {
+            const res = await fetch(`data/CBAS_${year}.xlsx`);
+            if (!res.ok) continue;
+            const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+            
+            wb.SheetNames.forEach(sheetName => {
+                if (!/^\d{8}$/.test(sheetName.trim())) return;
+                const dateStr = sheetName.trim();
+                const dateNum = parseInt(dateStr);
+                const formattedDate = `${dateStr.substring(0,4)}/${dateStr.substring(4,6)}/${dateStr.substring(6,8)}`;
+                
+                // skiprows=3 後讀取資料
+                const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { range: 3 });
+                
+                data.forEach((row) => {
+                    // 使用實際欄位名稱
+                    const vals = Object.values(row);
+                    const code = String(vals[0] || '').trim();
+                    if (!code || code.length < 4 || !code[0].match(/\d/)) return;
+                    
+                    const name = String(vals[1] || '').trim();
+                    const notional = parseFloat(String(vals[2] || '0').replace(/,/g, '')) || 0;
+                    const trades = parseInt(vals[3]) || 0;
+                    const premiumLow = parseFloat(vals[4]) || 0;
+                    const premiumHigh = parseFloat(vals[5]) || premiumLow;
+                    const premiumAvg = parseFloat(vals[6]) || premiumLow;
+                    const term = parseInt(vals[7]) || 0;
+                    
+                    if (notional <= 0) return;
+                    
+                    const record = {
+                        date: formattedDate,
+                        dateNum,
+                        code,
+                        name: name || DB.cbInfo[code]?.name || code,
+                        notional,
+                        trades,
+                        premiumLow,
+                        premiumHigh,
+                        premiumAvg,
+                        term
+                    };
+                    
+                    if (!DB.cbas[code]) DB.cbas[code] = [];
+                    DB.cbas[code].push(record);
+                    
+                    if (!DB.cbasDaily[dateNum]) DB.cbasDaily[dateNum] = [];
+                    DB.cbasDaily[dateNum].push(record);
+                    
+                    // 更新最新日期
+                    if (!META.latestCbasDate || dateNum > META.latestCbasDate) {
+                        META.latestCbasDate = dateNum;
+                    }
+                });
+            });
+            
+            META.cbasYearsLoaded[year] = true;
+        } catch(e) {
+            console.error(`載入CBAS ${year}資料失敗:`, e);
+        }
+    }
+}
+
+async function loadPriceData(years) {
+    for (const year of years) {
+        if (META.priceYearsLoaded[year]) continue;
+        try {
+            const urls = [`data/CB_price_${year}_cleaned.xlsx`, `data/CB_price_${year}.xlsx`];
+            for (const url of urls) {
+                const res = await fetch(url);
+                if (!res.ok) continue;
+                const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+                
+                wb.SheetNames.forEach(sheetName => {
+                    if (!/^\d{8}$/.test(sheetName.trim())) return;
+                    const dateStr = sheetName.trim();
+                    const dateNum = parseInt(dateStr);
+                    const formattedDate = `${dateStr.substring(0,4)}/${dateStr.substring(4,6)}/${dateStr.substring(6,8)}`;
+                    
+                    XLSX.utils.sheet_to_json(wb.Sheets[sheetName]).forEach(row => {
+                        const code = String(row['代號'] || '').trim();
+                        const close = parseFloat(row['收市']) || 0;
+                        if (!code || close <= 0) return;
+                        
+                        const record = {
+                            date: formattedDate,
+                            dateNum,
+                            open: parseFloat(row['開市']) || close,
+                            high: parseFloat(row['最高']) || close,
+                            low: parseFloat(row['最低']) || close,
+                            close,
+                            change: parseFloat(row['漲跌']) || 0,
+                            volume: parseFloat(row['單位']) || 0
+                        };
+                        
+                        if (!DB.price[code]) DB.price[code] = [];
+                        DB.price[code].push(record);
+                        
+                        // 更新最新價格
+                        if (!DB.priceLatest[code] || dateNum > DB.priceLatest[code].dateNum) {
+                            DB.priceLatest[code] = { 
+                                ...record, 
+                                name: row['名稱'] || DB.cbInfo[code]?.name || code 
+                            };
+                        }
+                        
+                        if (!META.latestPriceDate || dateNum > META.latestPriceDate) {
+                            META.latestPriceDate = dateNum;
+                        }
+                    });
+                });
+                
+                META.priceYearsLoaded[year] = true;
+                break;
+            }
+        } catch(e) {
+            console.error(`載入價格 ${year}資料失敗:`, e);
+        }
+    }
+}
+
+async function loadKanbanData(years) {
+    for (const year of years) {
+        if (META.kanbanYearsLoaded[year]) continue;
+        try {
+            const res = await fetch(`data/CB_kanban_${year}.xlsx`);
+            if (!res.ok) continue;
+            const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellDates: true });
+            
+            // 找最新的日期工作表
+            const dateSheets = wb.SheetNames.filter(n => /^\d{8}$/.test(n.trim())).sort().reverse();
+            if (dateSheets.length === 0) continue;
+            
+            const latestSheet = dateSheets[0];
+            XLSX.utils.sheet_to_json(wb.Sheets[latestSheet]).forEach(row => {
+                const code = String(row['債券代碼'] || '').trim();
+                if (!code || code.length < 4) return;
+                
+                // 處理日期格式
+                const formatDate = (val) => {
+                    if (!val) return '-';
+                    if (val instanceof Date) {
+                        return val.toISOString().slice(0, 10);
+                    }
+                    return String(val).slice(0, 10);
+                };
+                
+                DB.kanbanLatest[code] = {
+                    code,
+                    name: row['債券簡稱'] || DB.cbInfo[code]?.name || code,
+                    convStart: formatDate(row['轉換起日']),
+                    convEnd: formatDate(row['轉換迄日']),
+                    convPrice: parseFloat(row['轉換價格']) || 0,
+                    putDate: formatDate(row['最近賣回權起日']),
+                    putPrice: parseFloat(row['最近賣回權價格']) || 0,
+                    forceRedeemStart: formatDate(row['強制贖回起日']),
+                    forceRedeemEnd: formatDate(row['強制贖回迄日']),
+                    forceRedeemPrice: parseFloat(row['強制贖回價格']) || 0,
+                    issueAmount: parseFloat(row['原始發行總額']) || 0,
+                    balance: parseFloat(row['上月底發行餘額']) || 0,
+                    cbPrice: parseFloat(row['轉債參考價格']) || 0,
+                    stockPrice: parseFloat(row['轉換標的股票價格']) || 0,
+                    couponRate: parseFloat(row['票面利率']) || 0
+                };
+            });
+            
+            META.kanbanYearsLoaded[year] = true;
+        } catch(e) {
+            console.error(`載入看板 ${year}資料失敗:`, e);
+        }
+    }
+}
+
+// ==================== 模式切換 ====================
+function setMode(mode) {
+    MODE = mode;
+    document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('active');
+        if (el.textContent.includes(getModeLabel(mode))) el.classList.add('active');
+    });
+    
+    document.getElementById('overviewSection').classList.toggle('hidden', mode !== 'overview');
+    document.getElementById('cbasSection').classList.toggle('hidden', mode !== 'cbas');
+    document.getElementById('cbasRankingSection').classList.toggle('hidden', mode !== 'cbasRanking');
+    document.getElementById('priceSection').classList.toggle('hidden', mode !== 'price');
+    document.getElementById('kanbanSection').classList.toggle('hidden', mode !== 'kanban');
+    document.getElementById('stockSection').classList.toggle('hidden', mode !== 'stock');
+    document.getElementById('researchSection').classList.toggle('hidden', mode !== 'research');
+    
+    switch(mode) {
+        case 'overview': renderOverview(); break;
+        case 'cbas': renderCbasTable(); break;
+        case 'cbasRanking': renderCbasRanking(); break;
+        case 'price': renderPriceTable(); break;
+        case 'kanban': renderKanbanTable(); break;
+        case 'research': renderResearchContent('summary'); break;
+    }
+}
+
+function getModeLabel(mode) {
+    const labels = {
+        overview: '總覽', cbas: 'CBAS拆解查詢', cbasRanking: 'CBAS排行榜',
+        price: '價格查詢', kanban: '看板資訊', stock: '個股深度', research: '統計分析'
+    };
+    return labels[mode] || '';
+}
+
+// ==================== 總覽儀表板 ====================
+function renderOverview() {
+    // 統計卡片
+    const totalCbasRecords = Object.values(DB.cbas).reduce((sum, arr) => sum + arr.length, 0);
+    const totalNotional = Object.values(DB.cbas).flat().reduce((sum, r) => sum + r.notional, 0);
+    const uniqueCbasCodes = Object.keys(DB.cbas).length;
+    const listedCount = DB.listedCodes.size;
+    
+    document.getElementById('overviewStats').innerHTML = `
+        <div class="stat-card cbas">
+            <div class="icon">🔄</div>
+            <div class="value">${totalCbasRecords.toLocaleString()}</div>
+            <div class="label">CBAS交易筆數</div>
+        </div>
+        <div class="stat-card cbas">
+            <div class="icon">💎</div>
+            <div class="value">${formatNotional(totalNotional)}</div>
+            <div class="label">累計名目本金</div>
+        </div>
+        <div class="stat-card cbas">
+            <div class="icon">📊</div>
+            <div class="value">${uniqueCbasCodes}</div>
+            <div class="label">有CBAS交易的CB</div>
+        </div>
+        <div class="stat-card">
+            <div class="icon">📈</div>
+            <div class="value">${listedCount}</div>
+            <div class="label">掛牌中CB</div>
+        </div>
+        <div class="stat-card">
+            <div class="icon">💰</div>
+            <div class="value">${Object.keys(DB.priceLatest).length}</div>
+            <div class="label">有價格資料</div>
+        </div>
+        <div class="stat-card">
+            <div class="icon">📋</div>
+            <div class="value">${Object.keys(DB.kanbanLatest).length}</div>
+            <div class="label">看板資料</div>
+        </div>
+    `;
+    
+    // 今日/本週CBAS排行
+    renderTodayCbasRanking();
+    
+    // 市場統計
+    renderCbasMarketStats();
+}
+
+function setOverviewPeriod(period) {
+    OVERVIEW_PERIOD = period;
+    document.querySelectorAll('#overviewSection .period-tab').forEach(el => {
+        el.classList.toggle('active', el.textContent.includes(
+            period === 'today' ? '今日' : period === 'week' ? '本週' : '本月'
+        ));
+    });
+    renderTodayCbasRanking();
+}
+
+function renderTodayCbasRanking() {
+    let records = [];
+    
+    if (OVERVIEW_PERIOD === 'today' && META.latestCbasDate) {
+        records = DB.cbasDaily[META.latestCbasDate] || [];
+    } else {
+        // 本週或本月
+        const now = new Date();
+        let cutoff;
+        if (OVERVIEW_PERIOD === 'week') {
+            cutoff = new Date(now.setDate(now.getDate() - 7));
+        } else {
+            cutoff = new Date(now.setMonth(now.getMonth() - 1));
+        }
+        const cutoffNum = parseInt(cutoff.toISOString().slice(0,10).replace(/-/g, ''));
+        
+        Object.values(DB.cbasDaily).forEach(dayRecords => {
+            dayRecords.forEach(r => {
+                if (r.dateNum >= cutoffNum) records.push(r);
+            });
+        });
+    }
+    
+    // 彙總同一CB的資料
+    const summary = {};
+    records.forEach(r => {
+        if (!summary[r.code]) {
+            summary[r.code] = { code: r.code, name: r.name, notional: 0, trades: 0, premiumSum: 0, count: 0 };
+        }
+        summary[r.code].notional += r.notional;
+        summary[r.code].trades += r.trades;
+        summary[r.code].premiumSum += r.premiumAvg * r.trades;
+        summary[r.code].count += r.trades;
+    });
+    
+    const sorted = Object.values(summary).sort((a, b) => b.notional - a.notional).slice(0, 10);
+    
+    if (sorted.length === 0) {
+        document.getElementById('todayCbasRanking').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📭</div>
+                <div class="message">該期間無CBAS交易資料</div>
+            </div>
+        `;
+        return;
+    }
+    
+    document.getElementById('todayCbasRanking').innerHTML = `
+        <div class="ranking-list">
+            ${sorted.map((item, i) => `
+                <div class="ranking-item" onclick="openDetailModal('${item.code}')">
+                    <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
+                    <div class="ranking-info">
+                        <div class="name">${item.name}</div>
+                        <div class="code">${item.code}</div>
+                    </div>
+                    <div class="ranking-value">
+                        <div class="main">${formatNotional(item.notional)}</div>
+                        <div class="sub">${item.trades}筆</div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderCbasMarketStats() {
+    // 計算各年度統計
+    const yearStats = {};
+    Object.values(DB.cbas).flat().forEach(r => {
+        const year = r.date.substring(0, 4);
+        if (!yearStats[year]) yearStats[year] = { notional: 0, trades: 0, premiumSum: 0, count: 0 };
+        yearStats[year].notional += r.notional;
+        yearStats[year].trades += r.trades;
+        yearStats[year].premiumSum += r.premiumAvg * r.trades;
+        yearStats[year].count += r.trades;
+    });
+    
+    const years = Object.keys(yearStats).sort().reverse().slice(0, 4);
+    
+    document.getElementById('cbasMarketStats').innerHTML = years.map(year => {
+        const s = yearStats[year];
+        const avgPremium = s.count > 0 ? (s.premiumSum / s.count).toFixed(2) : '-';
+        return `
+            <div class="cbas-stat-card">
+                <div class="title"><span>📅</span> ${year}年統計</div>
+                <div class="main-value">${formatNotional(s.notional)}</div>
+                <div class="sub-info">
+                    交易筆數: ${s.trades.toLocaleString()} | 
+                    平均權利金: ${avgPremium}元
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ==================== CBAS拆解查詢 ====================
+function setCbasFilter(filter) {
+    CBAS_FILTER = filter;
+    document.querySelectorAll('#cbasQuickFilters .quick-filter').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${filter}'`));
+    });
+    CBAS_PAGE.current = 1;
+    renderCbasTable();
+}
+
+function setCbasPeriod(period) {
+    CBAS_PERIOD = period;
+    document.querySelectorAll('#cbasSection .filter-tab').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${period}'`));
+    });
+    CBAS_PAGE.current = 1;
+    renderCbasTable();
+}
+
+function sortCbasTable(field) {
+    if (CBAS_SORT.field === field) {
+        CBAS_SORT.dir = CBAS_SORT.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        CBAS_SORT.field = field;
+        CBAS_SORT.dir = 'desc';
+    }
+    renderCbasTable();
+}
+
+function searchCbas() {
+    CBAS_PAGE.current = 1;
+    renderCbasTable();
+}
+
+function getCbasFilteredData() {
+    const query = document.getElementById('cbasSearch').value.toLowerCase().trim();
+    let records = Object.values(DB.cbas).flat();
+    
+    // 期間篩選
+    if (CBAS_PERIOD !== 'all') {
+        records = records.filter(r => r.date.startsWith(CBAS_PERIOD));
+    }
+    
+    // 搜尋篩選
+    if (query) {
+        records = records.filter(r => 
+            r.code.toLowerCase().includes(query) || 
+            r.name.toLowerCase().includes(query)
+        );
+    }
+    
+    // 快速篩選
+    switch(CBAS_FILTER) {
+        case 'highPremium':
+            records = records.filter(r => r.premiumAvg >= 30);
+            break;
+        case 'highVolume':
+            records = records.filter(r => r.notional >= 10000000);
+            break;
+        case 'frequent':
+            records = records.filter(r => r.trades >= 5);
+            break;
+    }
+    
+    // 排序
+    records.sort((a, b) => {
+        let valA, valB;
+        switch(CBAS_SORT.field) {
+            case 'code': valA = a.code; valB = b.code; break;
+            case 'name': valA = a.name; valB = b.name; break;
+            case 'date': valA = a.dateNum; valB = b.dateNum; break;
+            case 'notional': valA = a.notional; valB = b.notional; break;
+            case 'trades': valA = a.trades; valB = b.trades; break;
+            case 'premiumAvg': valA = a.premiumAvg; valB = b.premiumAvg; break;
+            case 'premiumLow': valA = a.premiumLow; valB = b.premiumLow; break;
+            case 'premiumHigh': valA = a.premiumHigh; valB = b.premiumHigh; break;
+            case 'term': valA = a.term; valB = b.term; break;
+            default: valA = a.dateNum; valB = b.dateNum;
+        }
+        if (typeof valA === 'string') {
+            return CBAS_SORT.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return CBAS_SORT.dir === 'asc' ? valA - valB : valB - valA;
+    });
+    
+    return records;
+}
+
+function renderCbasTable() {
+    const data = getCbasFilteredData();
+    
+    // 更新篩選計數
+    const allRecords = Object.values(DB.cbas).flat();
+    document.getElementById('highPremiumCount').textContent = allRecords.filter(r => r.premiumAvg >= 30).length;
+    document.getElementById('highVolumeCount').textContent = allRecords.filter(r => r.notional >= 10000000).length;
+    document.getElementById('frequentCount').textContent = allRecords.filter(r => r.trades >= 5).length;
+    
+    // 分頁
+    const totalPages = Math.ceil(data.length / CBAS_PAGE.size) || 1;
+    if (CBAS_PAGE.current > totalPages) CBAS_PAGE.current = totalPages;
+    const start = (CBAS_PAGE.current - 1) * CBAS_PAGE.size;
+    const pageData = data.slice(start, start + CBAS_PAGE.size);
+    
+    if (data.length === 0) {
+        document.getElementById('cbasTableBody').innerHTML = `
+            <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gray)">無符合條件的資料</td></tr>
+        `;
+        document.getElementById('cbasPagination').innerHTML = '';
+        return;
+    }
+    
+    document.getElementById('cbasTableBody').innerHTML = pageData.map(r => {
+        const premiumClass = r.premiumAvg >= 40 ? 'premium-high' : r.premiumAvg >= 20 ? 'premium-mid' : 'premium-low';
+        return `
+            <tr class="${premiumClass}" onclick="openDetailModal('${r.code}')">
+                <td class="code">${r.code}</td>
+                <td>${r.name}</td>
+                <td class="hide-mobile">${r.date}</td>
+                <td class="text-right mono">${formatNotional(r.notional)}</td>
+                <td class="text-right">${r.trades}</td>
+                <td class="text-right mono" style="font-weight:600;color:var(--cbas-primary)">${r.premiumAvg.toFixed(2)}</td>
+                <td class="text-right mono hide-mobile">${r.premiumLow.toFixed(2)}</td>
+                <td class="text-right mono hide-mobile">${r.premiumHigh.toFixed(2)}</td>
+                <td class="text-right">${r.term}年</td>
+            </tr>
+        `;
+    }).join('');
+    
+    document.getElementById('cbasPagination').innerHTML = `
+        <button onclick="changeCbasPage(-1)" ${CBAS_PAGE.current <= 1 ? 'disabled' : ''}>◀ 上一頁</button>
+        <span class="page-info">第 ${CBAS_PAGE.current} 頁 / 共 ${totalPages} 頁 (${data.length}筆)</span>
+        <button onclick="changeCbasPage(1)" ${CBAS_PAGE.current >= totalPages ? 'disabled' : ''}>下一頁 ▶</button>
+    `;
+}
+
+function changeCbasPage(delta) {
+    CBAS_PAGE.current += delta;
+    renderCbasTable();
+}
+
+// ==================== CBAS排行榜 ====================
+function setRankingPeriod(period) {
+    RANKING_PERIOD = period;
+    document.querySelectorAll('#cbasRankingSection .period-tab').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${period}'`));
+    });
+    renderCbasRanking();
+}
+
+function renderCbasRanking() {
+    let records = Object.values(DB.cbas).flat();
+    
+    if (RANKING_PERIOD !== 'all') {
+        records = records.filter(r => r.date.startsWith(RANKING_PERIOD));
+    }
+    
+    // 統計
+    const totalNotional = records.reduce((sum, r) => sum + r.notional, 0);
+    const totalTrades = records.reduce((sum, r) => sum + r.trades, 0);
+    const avgPremium = totalTrades > 0 ? 
+        records.reduce((sum, r) => sum + r.premiumAvg * r.trades, 0) / totalTrades : 0;
+    
+    document.getElementById('totalNotional').textContent = formatNotional(totalNotional);
+    document.getElementById('totalNotionalInfo').textContent = `共 ${records.length} 筆交易紀錄`;
+    document.getElementById('totalTrades').textContent = totalTrades.toLocaleString();
+    document.getElementById('totalTradesInfo').textContent = `涵蓋 ${new Set(records.map(r => r.code)).size} 檔CB`;
+    document.getElementById('avgPremium').textContent = avgPremium.toFixed(2) + '元';
+    document.getElementById('avgPremiumInfo').textContent = `加權平均`;
+    
+    // 名目本金排行
+    const notionalByCode = {};
+    records.forEach(r => {
+        if (!notionalByCode[r.code]) {
+            notionalByCode[r.code] = { code: r.code, name: r.name, notional: 0, trades: 0 };
+        }
+        notionalByCode[r.code].notional += r.notional;
+        notionalByCode[r.code].trades += r.trades;
+    });
+    
+    const notionalRanking = Object.values(notionalByCode).sort((a, b) => b.notional - a.notional).slice(0, 15);
+    
+    document.getElementById('notionalRanking').innerHTML = notionalRanking.map((item, i) => `
+        <div class="ranking-item" onclick="openDetailModal('${item.code}')">
+            <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
+            <div class="ranking-info">
+                <div class="name">${item.name}</div>
+                <div class="code">${item.code}</div>
+            </div>
+            <div class="ranking-value">
+                <div class="main">${formatNotional(item.notional)}</div>
+                <div class="sub">${item.trades}筆交易</div>
+            </div>
+        </div>
+    `).join('');
+    
+    // 權利金排行
+    const premiumRanking = [...records].sort((a, b) => b.premiumAvg - a.premiumAvg).slice(0, 15);
+    
+    document.getElementById('premiumRanking').innerHTML = premiumRanking.map((item, i) => `
+        <div class="ranking-item" onclick="openDetailModal('${item.code}')">
+            <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
+            <div class="ranking-info">
+                <div class="name">${item.name}</div>
+                <div class="code">${item.code} | ${item.date}</div>
+            </div>
+            <div class="ranking-value">
+                <div class="main">${item.premiumAvg.toFixed(2)}元</div>
+                <div class="sub">名目本金 ${formatNotional(item.notional)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ==================== 價格查詢 ====================
+function setPriceFilter(filter) {
+    PRICE_FILTER = filter;
+    document.querySelectorAll('#priceSection .quick-filter').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${filter}'`));
+    });
+    PRICE_PAGE.current = 1;
+    renderPriceTable();
+}
+
+function sortPriceTable(field) {
+    if (PRICE_SORT.field === field) {
+        PRICE_SORT.dir = PRICE_SORT.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        PRICE_SORT.field = field;
+        PRICE_SORT.dir = 'desc';
+    }
+    renderPriceTable();
+}
+
+function filterPriceTable() {
+    PRICE_PAGE.current = 1;
+    renderPriceTable();
+}
+
+function getPriceFilteredData() {
+    const query = document.getElementById('priceSearch').value.toLowerCase().trim();
+    let data = Object.entries(DB.priceLatest).map(([code, p]) => ({
+        code,
+        name: p.name,
+        date: p.date,
+        open: p.open,
+        high: p.high,
+        low: p.low,
+        close: p.close,
+        change: p.change,
+        changePct: p.close > 0 ? ((p.change / (p.close - p.change)) * 100) : 0,
+        volume: p.volume,
+        hasCbas: !!DB.cbas[code]
+    }));
+    
+    // 搜尋篩選
+    if (query) {
+        data = data.filter(d => 
+            d.code.toLowerCase().includes(query) || 
+            d.name.toLowerCase().includes(query)
+        );
+    }
+    
+    // 快速篩選
+    switch(PRICE_FILTER) {
+        case 'discount':
+            data = data.filter(d => d.close < 100);
+            break;
+        case 'lowPremium':
+            data = data.filter(d => d.close >= 100 && d.close < 110);
+            break;
+        case 'hasCbas':
+            data = data.filter(d => d.hasCbas);
+            break;
+    }
+    
+    // 排序
+    data.sort((a, b) => {
+        let valA = a[PRICE_SORT.field];
+        let valB = b[PRICE_SORT.field];
+        if (typeof valA === 'string') {
+            return PRICE_SORT.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return PRICE_SORT.dir === 'asc' ? valA - valB : valB - valA;
+    });
+    
+    return data;
+}
+
+function renderPriceTable() {
+    const data = getPriceFilteredData();
+    const allData = Object.values(DB.priceLatest);
+    
+    // 更新計數
+    document.getElementById('priceAllCount').textContent = allData.length;
+    document.getElementById('discountCount').textContent = allData.filter(p => p.close < 100).length;
+    document.getElementById('lowPremiumCount').textContent = allData.filter(p => p.close >= 100 && p.close < 110).length;
+    document.getElementById('hasCbasCount').textContent = allData.filter(p => DB.cbas[Object.keys(DB.priceLatest).find(k => DB.priceLatest[k] === p)]).length;
+    
+    // 更新風險分布統計
+    document.getElementById('riskSafeCount').textContent = allData.filter(p => p.close < 110).length;
+    document.getElementById('riskCautionCount').textContent = allData.filter(p => p.close >= 110 && p.close < 120).length;
+    document.getElementById('riskWarningCount').textContent = allData.filter(p => p.close >= 120 && p.close < 130).length;
+    document.getElementById('riskDangerCount').textContent = allData.filter(p => p.close >= 130).length;
+    
+    // 分頁
+    const totalPages = Math.ceil(data.length / PRICE_PAGE.size) || 1;
+    if (PRICE_PAGE.current > totalPages) PRICE_PAGE.current = totalPages;
+    const start = (PRICE_PAGE.current - 1) * PRICE_PAGE.size;
+    const pageData = data.slice(start, start + PRICE_PAGE.size);
+    
+    if (data.length === 0) {
+        document.getElementById('priceTableBody').innerHTML = `
+            <tr><td colspan="10" style="text-align:center;padding:40px;color:var(--gray)">無符合條件的資料</td></tr>
+        `;
+        document.getElementById('pricePagination').innerHTML = '';
+        return;
+    }
+    
+    document.getElementById('priceTableBody').innerHTML = pageData.map(d => {
+        const changeClass = d.change > 0 ? 'up' : d.change < 0 ? 'down' : '';
+        const priceClass = d.close < 100 ? 'premium-low' : d.close > 120 ? 'premium-high' : '';
+        const riskLevel = getPriceRiskLevel(d.close);
+        const riskClass = riskLevel.level === 'safe' ? 'safe' : riskLevel.level === 'caution' ? 'caution' : riskLevel.level === 'warning' ? 'warning' : 'danger';
+        return `
+            <tr class="${priceClass}" onclick="openDetailModal('${d.code}')" title="${riskLevel.tip}">
+                <td class="code">${d.code}</td>
+                <td>${d.name}</td>
+                <td class="text-right mono" style="font-weight:600">${d.close.toFixed(2)}</td>
+                <td class="text-right mono ${changeClass}">${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}</td>
+                <td class="text-right mono ${changeClass}">${d.changePct > 0 ? '+' : ''}${d.changePct.toFixed(2)}%</td>
+                <td class="text-center">
+                    <span class="risk-indicator ${riskClass}" style="font-size:11px;padding:2px 8px;">${riskLevel.label}</span>
+                </td>
+                <td class="text-right mono hide-mobile">${d.high.toFixed(2)}</td>
+                <td class="text-right mono hide-mobile">${d.low.toFixed(2)}</td>
+                <td class="text-center">
+                    <span class="cbas-badge ${d.hasCbas ? 'has-cbas' : 'no-cbas'}">
+                        ${d.hasCbas ? '🔄 有' : '－'}
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    document.getElementById('pricePagination').innerHTML = `
+        <button onclick="changePricePage(-1)" ${PRICE_PAGE.current <= 1 ? 'disabled' : ''}>◀ 上一頁</button>
+        <span class="page-info">第 ${PRICE_PAGE.current} 頁 / 共 ${totalPages} 頁 (${data.length}筆)</span>
+        <button onclick="changePricePage(1)" ${PRICE_PAGE.current >= totalPages ? 'disabled' : ''}>下一頁 ▶</button>
+    `;
+}
+
+function changePricePage(delta) {
+    PRICE_PAGE.current += delta;
+    renderPriceTable();
+}
+
+// ==================== 看板資訊 ====================
+function sortKanbanTable(field) {
+    if (KANBAN_SORT.field === field) {
+        KANBAN_SORT.dir = KANBAN_SORT.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        KANBAN_SORT.field = field;
+        KANBAN_SORT.dir = 'desc';
+    }
+    renderKanbanTable();
+}
+
+function filterKanbanTable() {
+    KANBAN_PAGE.current = 1;
+    renderKanbanTable();
+}
+
+function getKanbanFilteredData() {
+    const query = document.getElementById('kanbanSearch').value.toLowerCase().trim();
+    let data = Object.values(DB.kanbanLatest);
+    
+    if (query) {
+        data = data.filter(d => 
+            d.code.toLowerCase().includes(query) || 
+            d.name.toLowerCase().includes(query)
+        );
+    }
+    
+    data.sort((a, b) => {
+        let valA = a[KANBAN_SORT.field];
+        let valB = b[KANBAN_SORT.field];
+        if (typeof valA === 'string') {
+            return KANBAN_SORT.dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return KANBAN_SORT.dir === 'asc' ? valA - valB : valB - valA;
+    });
+    
+    return data;
+}
+
+function renderKanbanTable() {
+    const data = getKanbanFilteredData();
+    
+    const totalPages = Math.ceil(data.length / KANBAN_PAGE.size) || 1;
+    if (KANBAN_PAGE.current > totalPages) KANBAN_PAGE.current = totalPages;
+    const start = (KANBAN_PAGE.current - 1) * KANBAN_PAGE.size;
+    const pageData = data.slice(start, start + KANBAN_PAGE.size);
+    
+    if (data.length === 0) {
+        document.getElementById('kanbanTableBody').innerHTML = `
+            <tr><td colspan="10" style="text-align:center;padding:40px;color:var(--gray)">無符合條件的資料</td></tr>
+        `;
+        document.getElementById('kanbanPagination').innerHTML = '';
+        return;
+    }
+    
+    document.getElementById('kanbanTableBody').innerHTML = pageData.map(d => `
+        <tr onclick="openDetailModal('${d.code}')">
+            <td class="code">${d.code}</td>
+            <td>${d.name}</td>
+            <td class="text-right mono" style="font-weight:600;color:var(--primary)">${d.convPrice > 0 ? d.convPrice.toFixed(2) : '-'}</td>
+            <td class="hide-mobile">${d.convStart || '-'}</td>
+            <td class="hide-mobile">${d.convEnd || '-'}</td>
+            <td class="hide-mobile">${d.putDate || '-'}</td>
+            <td class="text-right mono hide-mobile">${d.putPrice > 0 ? d.putPrice.toFixed(2) : '-'}</td>
+            <td class="text-right mono">${d.balance > 0 ? formatNotional(d.balance * 100000000) : '-'}</td>
+            <td class="text-right mono">${d.cbPrice > 0 ? d.cbPrice.toFixed(2) : '-'}</td>
+            <td class="text-right mono">${d.stockPrice > 0 ? d.stockPrice.toFixed(2) : '-'}</td>
+        </tr>
+    `).join('');
+    
+    document.getElementById('kanbanPagination').innerHTML = `
+        <button onclick="changeKanbanPage(-1)" ${KANBAN_PAGE.current <= 1 ? 'disabled' : ''}>◀ 上一頁</button>
+        <span class="page-info">第 ${KANBAN_PAGE.current} 頁 / 共 ${totalPages} 頁 (${data.length}筆)</span>
+        <button onclick="changeKanbanPage(1)" ${KANBAN_PAGE.current >= totalPages ? 'disabled' : ''}>下一頁 ▶</button>
+    `;
+}
+
+function changeKanbanPage(delta) {
+    KANBAN_PAGE.current += delta;
+    renderKanbanTable();
+}
+
+// ==================== 個股深度分析 ====================
+function loadStockAnalysis() {
+    const code = document.getElementById('stockCodeInput').value.trim();
+    const resultEl = document.getElementById('stockAnalysisResult');
+    
+    if (!code) {
+        resultEl.innerHTML = `
+            <div class="empty-state">
+                <div class="icon">⚠️</div>
+                <div class="message">請輸入CB代號</div>
+            </div>
+        `;
+        return;
+    }
+    
+    const info = DB.cbInfo[code] || {};
+    const cbasRecords = DB.cbas[code] || [];
+    const priceRecords = DB.price[code] || [];
+    const latestPrice = DB.priceLatest[code];
+    const kanban = DB.kanbanLatest[code];
+    const isListed = DB.listedCodes.has(code);
+    
+    if (!info.name && !cbasRecords.length && !priceRecords.length && !kanban) {
+        resultEl.innerHTML = `
+            <div class="empty-state">
+                <div class="icon">❌</div>
+                <div class="message">找不到代號 ${code} 的資料</div>
+            </div>
+        `;
+        return;
+    }
+    
+    const name = info.name || latestPrice?.name || kanban?.name || code;
+    const currentPrice = latestPrice?.close || kanban?.cbPrice || 0;
+    
+    // CBAS統計
+    const totalCbasNotional = cbasRecords.reduce((sum, r) => sum + r.notional, 0);
+    const totalCbasTrades = cbasRecords.reduce((sum, r) => sum + r.trades, 0);
+    const avgPremium = totalCbasTrades > 0 ? 
+        cbasRecords.reduce((sum, r) => sum + r.premiumAvg * r.trades, 0) / totalCbasTrades : 0;
+    
+    // 價格風險等級
+    const priceRisk = getPriceRiskLevel(currentPrice);
+    
+    let html = `
+        <div style="margin-bottom:20px;">
+            <h2 style="font-size:24px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                ${name} <span style="font-size:16px;color:var(--gray);font-weight:600">${code}</span>
+                <span style="font-size:12px;padding:4px 12px;border-radius:12px;background:${isListed ? 'rgba(22,163,74,0.1)' : 'rgba(148,163,184,0.1)'};color:${isListed ? 'var(--listed)' : 'var(--delisted)'}">${isListed ? '掛牌中' : '已下市'}</span>
+                ${currentPrice > 0 ? `<span style="font-size:12px;padding:4px 12px;border-radius:12px;background:${priceRisk.level === 'safe' ? 'rgba(22,163,74,0.1)' : priceRisk.level === 'danger' ? 'rgba(220,38,38,0.1)' : 'rgba(245,158,11,0.1)'};color:${priceRisk.color}">${priceRisk.label}</span>` : ''}
+            </h2>
+            <div style="color:var(--gray);font-size:14px;margin-top:4px;">
+                ${info.industry || '-'} | ${info.guarantee || '-'}
+            </div>
+        </div>
+    `;
+    
+    // 智慧提示區
+    if (currentPrice > 0) {
+        const smartTips = generateSmartTips(code, currentPrice, cbasRecords, kanban);
+        if (smartTips) {
+            html += `
+                <div style="margin-bottom:20px;">
+                    <div style="font-weight:700;color:#92400e;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                        <span>🧠</span> 智慧分析提示
+                    </div>
+                    ${smartTips}
+                </div>
+            `;
+        }
+    }
+    
+    // 基本資料卡片
+    html += `<div class="detail-grid">`;
+    
+    if (latestPrice) {
+        const changeClass = latestPrice.change >= 0 ? 'up' : 'down';
+        html += `
+            <div class="detail-card">
+                <div class="label">最新收盤價</div>
+                <div class="value highlight">${latestPrice.close.toFixed(2)}</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">漲跌</div>
+                <div class="value ${changeClass}">
+                    ${latestPrice.change >= 0 ? '+' : ''}${latestPrice.change.toFixed(2)}
+                </div>
+            </div>
+        `;
+    }
+    
+    if (kanban) {
+        html += `
+            <div class="detail-card">
+                <div class="label">轉換價格</div>
+                <div class="value highlight">${kanban.convPrice > 0 ? kanban.convPrice.toFixed(2) : '-'}</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">發行餘額</div>
+                <div class="value">${kanban.balance > 0 ? formatNotional(kanban.balance) : '-'}</div>
+            </div>
+        `;
+        
+        // 餘額比例計算
+        if (kanban.issueAmount > 0 && kanban.balance > 0) {
+            const balanceRatio = (kanban.balance / kanban.issueAmount) * 100;
+            html += `
+                <div class="detail-card">
+                    <div class="label">餘額比例</div>
+                    <div class="value" style="color:${balanceRatio < 70 ? 'var(--up)' : balanceRatio < 90 ? 'var(--warning)' : 'var(--text)'}">
+                        ${balanceRatio.toFixed(1)}%
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    html += `</div>`;
+    
+    // CBAS分析區
+    if (cbasRecords.length > 0) {
+        html += `
+            <div class="content-section" style="margin-top:20px;background:var(--cbas-bg);border:1px solid var(--cbas-border);">
+                <div class="section-title" style="color:var(--cbas-primary);margin-bottom:16px;">
+                    <span class="icon">🔄</span> CBAS拆解分析
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">累計拆解次數</div>
+                        <div class="value cbas">${cbasRecords.length}次</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">累計名目本金</div>
+                        <div class="value cbas">${formatNotional(totalCbasNotional)}</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">累計交易筆數</div>
+                        <div class="value cbas">${totalCbasTrades}</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">平均權利金</div>
+                        <div class="value cbas">${avgPremium.toFixed(2)}元</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top:16px;">
+                    <div style="font-weight:600;color:var(--cbas-primary);margin-bottom:12px;">📋 最近CBAS交易紀錄</div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th class="text-right">名目本金</th>
+                                    <th class="text-right">筆數</th>
+                                    <th class="text-right">權利金(低)</th>
+                                    <th class="text-right">權利金(高)</th>
+                                    <th class="text-right">權利金(均)</th>
+                                    <th class="text-right">期間</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${cbasRecords.slice().sort((a, b) => b.dateNum - a.dateNum).slice(0, 20).map(r => `
+                                    <tr>
+                                        <td>${r.date}</td>
+                                        <td class="text-right mono">${formatNotional(r.notional)}</td>
+                                        <td class="text-right">${r.trades}</td>
+                                        <td class="text-right mono">${r.premiumLow.toFixed(2)}</td>
+                                        <td class="text-right mono">${r.premiumHigh.toFixed(2)}</td>
+                                        <td class="text-right mono" style="color:var(--cbas-primary);font-weight:600">${r.premiumAvg.toFixed(2)}</td>
+                                        <td class="text-right">${r.term}年</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${cbasRecords.length > 20 ? `<div style="text-align:center;padding:12px;color:var(--gray);font-size:13px;">僅顯示最近20筆</div>` : ''}
+                </div>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="content-section" style="margin-top:20px;background:#f8fafc;">
+                <div class="empty-state" style="padding:30px;">
+                    <div class="icon">📭</div>
+                    <div class="message">此CB無CBAS拆解紀錄</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 看板資訊區
+    if (kanban) {
+        html += `
+            <div class="content-section" style="margin-top:20px;">
+                <div class="section-title" style="margin-bottom:16px;">
+                    <span class="icon">📋</span> 看板詳細資訊
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-card">
+                        <div class="label">轉換起日</div>
+                        <div class="value">${kanban.convStart || '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">轉換迄日</div>
+                        <div class="value">${kanban.convEnd || '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">賣回權日期</div>
+                        <div class="value">${kanban.putDate || '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">賣回價格</div>
+                        <div class="value">${kanban.putPrice > 0 ? kanban.putPrice.toFixed(2) : '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">強制贖回起日</div>
+                        <div class="value">${kanban.forceRedeemStart || '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">原始發行總額</div>
+                        <div class="value">${kanban.issueAmount > 0 ? formatNotional(kanban.issueAmount) : '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">股票價格</div>
+                        <div class="value">${kanban.stockPrice > 0 ? kanban.stockPrice.toFixed(2) : '-'}</div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="label">票面利率</div>
+                        <div class="value">${kanban.couponRate > 0 ? kanban.couponRate + '%' : '-'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    resultEl.innerHTML = html;
+}
+
+// ==================== 詳細資料彈窗 ====================
+function openDetailModal(code) {
+    const info = DB.cbInfo[code] || {};
+    const cbasRecords = DB.cbas[code] || [];
+    const latestPrice = DB.priceLatest[code];
+    const kanban = DB.kanbanLatest[code];
+    const isListed = DB.listedCodes.has(code);
+    const name = info.name || latestPrice?.name || kanban?.name || code;
+    
+    document.getElementById('modalTitle').innerHTML = `<span>📊</span> ${name} (${code})`;
+    
+    // CBAS統計
+    const totalCbasNotional = cbasRecords.reduce((sum, r) => sum + r.notional, 0);
+    const totalCbasTrades = cbasRecords.reduce((sum, r) => sum + r.trades, 0);
+    const avgPremium = totalCbasTrades > 0 ? 
+        cbasRecords.reduce((sum, r) => sum + r.premiumAvg * r.trades, 0) / totalCbasTrades : 0;
+    
+    let html = `
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+            <span style="font-size:14px;padding:6px 14px;border-radius:20px;background:${isListed ? 'rgba(22,163,74,0.1)' : 'rgba(148,163,184,0.1)'};color:${isListed ? 'var(--listed)' : 'var(--delisted)'};font-weight:600">
+                ${isListed ? '🟢 掛牌中' : '⚫ 已下市'}
+            </span>
+            <span style="font-size:13px;color:var(--gray)">${info.industry || '-'} | ${info.guarantee || '-'}</span>
+        </div>
+        
+        <div class="detail-grid">
+            ${latestPrice ? `
+                <div class="detail-card">
+                    <div class="label">最新收盤</div>
+                    <div class="value highlight">${latestPrice.close.toFixed(2)}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="label">漲跌</div>
+                    <div class="value" style="color:${latestPrice.change >= 0 ? 'var(--up)' : 'var(--down)'}">
+                        ${latestPrice.change >= 0 ? '+' : ''}${latestPrice.change.toFixed(2)}
+                    </div>
+                </div>
+                <div class="detail-card">
+                    <div class="label">成交量</div>
+                    <div class="value">${latestPrice.volume}張</div>
+                </div>
+            ` : ''}
+            ${kanban ? `
+                <div class="detail-card">
+                    <div class="label">轉換價</div>
+                    <div class="value highlight">${kanban.convPrice > 0 ? kanban.convPrice.toFixed(2) : '-'}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="label">發行餘額</div>
+                    <div class="value">${kanban.balance > 0 ? kanban.balance.toFixed(2) + '億' : '-'}</div>
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    // CBAS資訊
+    if (cbasRecords.length > 0) {
+        html += `
+            <div style="background:var(--cbas-bg);border-radius:12px;padding:16px;margin-top:20px;border:1px solid var(--cbas-border);">
+                <div style="font-weight:700;color:var(--cbas-primary);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                    <span>🔄</span> CBAS拆解統計
+                </div>
+                <div class="detail-grid" style="grid-template-columns:repeat(4, 1fr);">
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">拆解次數</div>
+                        <div class="value cbas">${cbasRecords.length}</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">累計本金</div>
+                        <div class="value cbas">${formatNotional(totalCbasNotional)}</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">累計筆數</div>
+                        <div class="value cbas">${totalCbasTrades}</div>
+                    </div>
+                    <div class="detail-card" style="background:#fff;">
+                        <div class="label">平均權利金</div>
+                        <div class="value cbas">${avgPremium.toFixed(2)}元</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top:12px;max-height:200px;overflow-y:auto;">
+                    <table style="font-size:13px;">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th class="text-right">名目本金</th>
+                                <th class="text-right">筆數</th>
+                                <th class="text-right">權利金(均)</th>
+                                <th class="text-right">期間</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${cbasRecords.slice().sort((a, b) => b.dateNum - a.dateNum).slice(0, 10).map(r => `
+                                <tr>
+                                    <td>${r.date}</td>
+                                    <td class="text-right mono">${formatNotional(r.notional)}</td>
+                                    <td class="text-right">${r.trades}</td>
+                                    <td class="text-right mono" style="color:var(--cbas-primary)">${r.premiumAvg.toFixed(2)}</td>
+                                    <td class="text-right">${r.term}年</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('detailModal').classList.add('show');
+}
+
+function closeModal() {
+    document.getElementById('detailModal').classList.remove('show');
+}
+
+// ==================== 工具函數 ====================
+function formatNotional(value) {
+    if (value >= 100000000) {
+        return (value / 100000000).toFixed(2) + '億';
+    } else if (value >= 10000000) {
+        return (value / 10000000).toFixed(2) + '千萬';
+    } else if (value >= 10000) {
+        return (value / 10000).toFixed(0) + '萬';
+    }
+    return value.toLocaleString();
+}
+
+// ==================== 智慧分析系統 ====================
+const RESEARCH_DATA = {
+    // 價位風險數據 (來自專題1-1)
+    priceRisk: {
+        90: { lossOver20: 1.5, riskRewardRatio: 32.8, level: 'safe' },
+        100: { lossOver20: 1.4, riskRewardRatio: 32.4, level: 'safe' },
+        110: { lossOver20: 1.4, riskRewardRatio: 30.6, level: 'safe' },
+        120: { lossOver20: 5.4, riskRewardRatio: 8.9, level: 'caution' },
+        130: { lossOver20: 25.0, riskRewardRatio: 2.1, level: 'warning' },
+        150: { lossOver20: 24.0, riskRewardRatio: 2.2, level: 'warning' },
+        180: { lossOver20: 25.1, riskRewardRatio: 1.9, level: 'danger' },
+        200: { lossOver20: 23.4, riskRewardRatio: 2.1, level: 'danger' }
+    },
+    // CBAS主力追蹤數據 (來自專題1-2-1)
+    cbasWarning: {
+        safe: { priceRange: '100-115元', cbasRatio: '<70%', status: '主力正在布局' },
+        yellow: { priceRange: '115-125元', cbasRatio: '>70%', status: '布局接近完成' },
+        orange: { priceRange: '125-135元', cbasRatio: '>80%', status: '進入出場區域' },
+        red: { priceRange: '135-150元', cbasRatio: '>80%+餘額減少', status: '主力正在出場' },
+        danger: { priceRange: '>150元', cbasRatio: '餘額減>20%', status: '可能已出場大半' }
+    }
+};
+
+// 根據價格獲取風險等級
+function getPriceRiskLevel(price) {
+    if (price < 100) return { level: 'safe', label: '破底區', color: '#16a34a', tip: '破底買入獲利率達82.1%，是黃金買點' };
+    if (price < 110) return { level: 'safe', label: '安全區', color: '#16a34a', tip: '虧>20%機率僅1.4%，安全邊際強' };
+    if (price < 120) return { level: 'caution', label: '轉折區', color: '#f59e0b', tip: '虧>20%機率升至5.4%，開始需要注意' };
+    if (price < 130) return { level: 'warning', label: '警戒區', color: '#f97316', tip: '接近130元風險分水嶺，建議設定停利' };
+    if (price < 150) return { level: 'warning', label: '高風險區', color: '#dc2626', tip: '130元以上虧>20%機率達25%，被套機率94%' };
+    if (price < 180) return { level: 'danger', label: '極高風險', color: '#dc2626', tip: '主力可能正在出場，避免追高' };
+    return { level: 'danger', label: '危險區', color: '#7f1d1d', tip: '200元以上虧>30%機率16%，極度危險' };
+}
+
+// 根據CBAS拆解比例和價格獲取主力動態提示
+function getCbasWarningLevel(price, cbasRatio, balanceRatio) {
+    if (price <= 115 && cbasRatio < 70) {
+        return { level: 'safe', label: '安全區', tip: '主力正在布局，可持續持有' };
+    }
+    if (price <= 125 && cbasRatio >= 70) {
+        return { level: 'yellow', label: '黃燈區', tip: '主力布局接近完成，建議設定停利點' };
+    }
+    if (price <= 135 && cbasRatio >= 80) {
+        return { level: 'orange', label: '橘燈區', tip: '進入套利出場區域前緣，準備停利' };
+    }
+    if (price <= 150 && balanceRatio < 100) {
+        return { level: 'red', label: '紅燈區', tip: '主力正在大量套利出場，建議分批停利' };
+    }
+    if (price > 150 && balanceRatio < 80) {
+        return { level: 'danger', label: '高危區', tip: '主力可能已出場大半，避免追高' };
+    }
+    return { level: 'caution', label: '觀察中', tip: '持續關注餘額變化' };
+}
+
+// 生成智慧提示HTML
+function generateSmartTips(code, price, cbasRecords, kanban) {
+    const tips = [];
+    
+    // 價格風險提示
+    const priceRisk = getPriceRiskLevel(price);
+    tips.push({
+        type: priceRisk.level === 'safe' ? 'success' : priceRisk.level === 'danger' ? 'danger' : 'warning',
+        icon: priceRisk.level === 'safe' ? '✅' : priceRisk.level === 'danger' ? '🚨' : '⚠️',
+        title: `價格風險：${priceRisk.label}`,
+        desc: priceRisk.tip
+    });
+    
+    // CBAS拆解提示
+    if (cbasRecords && cbasRecords.length > 0) {
+        const totalNotional = cbasRecords.reduce((sum, r) => sum + r.notional, 0);
+        const recentCbas = cbasRecords.filter(r => r.dateNum >= 20240101);
+        
+        if (recentCbas.length > 0) {
+            const avgPremium = recentCbas.reduce((sum, r) => sum + r.premiumAvg, 0) / recentCbas.length;
+            if (avgPremium >= 30) {
+                tips.push({
+                    type: 'warning',
+                    icon: '💰',
+                    title: `高權利金警示：平均${avgPremium.toFixed(1)}元`,
+                    desc: '高權利金可能反映市場對此CB看好，但也需注意主力布局進度'
+                });
+            }
+        }
+        
+        // 估算CBAS比例 (假設原發行額的60-80%會進行CBAS)
+        if (kanban && kanban.issueAmount > 0) {
+            const estimatedCbasRatio = (totalNotional / (kanban.issueAmount * 0.7)) * 100;
+            if (estimatedCbasRatio > 80 && price > 125) {
+                tips.push({
+                    type: 'danger',
+                    icon: '🔔',
+                    title: '主力布局可能已完成',
+                    desc: `CBAS拆解量已達相當規模，價格又在125元以上，建議密切關注餘額變化`
+                });
+            }
+        }
+    }
+    
+    // 餘額變化提示
+    if (kanban && kanban.issueAmount > 0 && kanban.balance > 0) {
+        const balanceRatio = (kanban.balance / kanban.issueAmount) * 100;
+        if (balanceRatio < 70 && price > 130) {
+            tips.push({
+                type: 'danger',
+                icon: '📉',
+                title: `餘額已減少${(100 - balanceRatio).toFixed(0)}%`,
+                desc: '餘額大幅減少且價格偏高，主力可能已出場大半，注意追高風險'
+            });
+        } else if (balanceRatio < 90 && price > 125) {
+            tips.push({
+                type: 'warning',
+                icon: '📊',
+                title: '餘額開始減少',
+                desc: '根據統計，餘額首次降至90%時CB價格中位數約127元，主力開始出場'
+            });
+        }
+    }
+    
+    // 停利建議
+    if (price >= 130 && price <= 145) {
+        tips.push({
+            type: 'info',
+            icon: '💡',
+            title: '停利區間參考',
+            desc: '根據統計，主力出場集中在127-145元區間，此價位可考慮分批停利'
+        });
+    }
+    
+    return tips.map(t => `
+        <div class="smart-tip ${t.type === 'info' ? '' : t.type}">
+            <div class="icon">${t.icon}</div>
+            <div class="content">
+                <div class="title">${t.title}</div>
+                <div class="desc">${t.desc}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ==================== 統計分析報告 ====================
+let RESEARCH_TAB = 'summary';
+
+function setResearchTab(tab) {
+    RESEARCH_TAB = tab;
+    document.querySelectorAll('.research-tab').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${tab}'`));
+    });
+    renderResearchContent(tab);
+}
+
+function renderResearchContent(tab) {
+    const container = document.getElementById('researchContent');
+    
+    switch(tab) {
+        case 'summary':
+            container.innerHTML = renderResearchSummary();
+            break;
+        case 'report1':
+            container.innerHTML = renderReport1();
+            break;
+        case 'report2':
+            container.innerHTML = renderReport2();
+            break;
+        case 'report3':
+            container.innerHTML = renderReport3();
+            break;
+        case 'report4':
+            container.innerHTML = renderReport4();
+            break;
+        case 'report5':
+            container.innerHTML = renderReport5();
+            break;
+        default:
+            container.innerHTML = renderResearchSummary();
+    }
+}
+
+function renderResearchSummary() {
+    return `
+        <div class="research-content">
+            <h2>📊 智慧摘要：15年統計數據的核心發現</h2>
+            <p style="color:#64748b;margin-bottom:20px;">資料期間：2011-2025年 ｜ 分析樣本：1,608檔CB ｜ CBAS交易筆數：100,344筆</p>
+            
+            <div class="insight-box success">
+                <div class="title">🛡️ 安全邊際關鍵：110元是分水嶺</div>
+                <ul>
+                    <li><strong>110元以下買入</strong>：虧損>10%機率僅0.6-1.9%，虧損>20%機率僅1.3-1.4%</li>
+                    <li><strong>110元以上買入</strong>：虧損>10%機率跳升至22-41%</li>
+                    <li><strong>最佳區間100-105元</strong>：虧>5%僅3.9%，虧>10%僅0.6%</li>
+                </ul>
+            </div>
+            
+            <div class="insight-box warning">
+                <div class="title">⚠️ 風險警示：130元是危險分水嶺</div>
+                <ul>
+                    <li><strong>130元買入被套機率94.1%</strong>，僅5.9%買入後一路上漲</li>
+                    <li><strong>虧損>20%機率達25%</strong>，相當於每4檔就有1檔深度虧損</li>
+                    <li><strong>解套機率僅約五成</strong>，51.6%被套者最終未能解套</li>
+                    <li><strong>風險報酬比從30倍驟降至2倍</strong></li>
+                </ul>
+            </div>
+            
+            <div class="insight-box info">
+                <div class="title">🔄 CBAS主力動態追蹤</div>
+                <table class="data-table">
+                    <tr><th>警示等級</th><th>價格區間</th><th>主力狀態</th><th>建議</th></tr>
+                    <tr><td><span class="risk-indicator safe">安全區</span></td><td>100-115元</td><td>正在布局</td><td>可持續持有</td></tr>
+                    <tr><td><span class="risk-indicator caution">黃燈區</span></td><td>115-125元</td><td>布局接近完成</td><td>設定停利點</td></tr>
+                    <tr><td><span class="risk-indicator warning">橘燈區</span></td><td>125-135元</td><td>進入出場區域</td><td>準備停利</td></tr>
+                    <tr><td><span class="risk-indicator warning">紅燈區</span></td><td>135-150元</td><td>大量出場中</td><td>分批停利</td></tr>
+                    <tr><td><span class="risk-indicator danger">高危區</span></td><td>>150元</td><td>可能已出場大半</td><td>避免追高</td></tr>
+                </table>
+            </div>
+            
+            <div class="insight-box">
+                <div class="title">💡 核心策略建議</div>
+                <ul>
+                    <li><strong>耐心等待低價</strong>：67.3%曾漲到130的CB，之前都有110以下買點</li>
+                    <li><strong>破底是黃金機會</strong>：100元以下買入獲利率達82.1%</li>
+                    <li><strong>停利比停損重要</strong>：主力出場集中在127-145元區間</li>
+                    <li><strong>避免「坐電梯」</strong>：約4%高價買入者曾獲利50%以上卻最終虧損</li>
+                </ul>
+            </div>
+            
+            <h2>📈 各價位風險報酬速查表</h2>
+            <table class="data-table">
+                <tr><th>買入價位</th><th>虧>20%機率</th><th>風險報酬比</th><th>風險等級</th></tr>
+                <tr><td>90元</td><td>1.5%</td><td>32.8</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr><td>100元</td><td>1.4%</td><td>32.4</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr><td>110元</td><td>1.4%</td><td>30.6</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr class="highlight"><td>120元</td><td>5.4%</td><td>8.9</td><td><span class="risk-indicator caution">低</span></td></tr>
+                <tr class="highlight"><td>130元</td><td>25.0%</td><td>2.1</td><td><span class="risk-indicator warning">高</span></td></tr>
+                <tr><td>150元</td><td>24.0%</td><td>2.2</td><td><span class="risk-indicator warning">高</span></td></tr>
+                <tr><td>180元</td><td>25.1%</td><td>1.9</td><td><span class="risk-indicator danger">高</span></td></tr>
+                <tr><td>200元</td><td>23.4%</td><td>2.1</td><td><span class="risk-indicator danger">高</span></td></tr>
+            </table>
+            
+            <div style="background:#f1f5f9;padding:16px;border-radius:8px;margin-top:20px;font-size:13px;color:#64748b;">
+                <strong>⚠️ 投資風險提醒</strong><br>
+                本系統所有數據均為歷史統計結果，僅供參考，不代表未來表現。可轉債投資涉及市場風險、信用風險、流動性風險等多重因素，投資人應依據自身風險承受能力，審慎評估後再做投資決策。本系統僅為資料整理與統計分析，不構成任何投資建議。
+            </div>
+        </div>
+    `;
+}
+
+function renderReport1() {
+    return `
+        <div class="research-content">
+            <h2>專題1-1：各價位買入風險全景統計</h2>
+            <p style="color:#64748b;">從90元到200元，風險報酬比差了多少倍 ｜ 資料期間：2011-2025年 ｜ 分析樣本：1,608檔CB</p>
+            
+            <h3>一、研究目標</h3>
+            <p>建立90元、100元、110元、120元、130元、150元、180元、200元各價位的風險報酬基準數據，提供投資人客觀的決策參考依據。</p>
+            
+            <h3>二、最終報酬分布統計</h3>
+            <table class="data-table">
+                <tr><th>價位</th><th>平均報酬</th><th>中位數</th><th>標準差</th><th>分布特徵</th></tr>
+                <tr><td>90元</td><td>24.3%</td><td>-0.9%</td><td>68.9%</td><td>右偏</td></tr>
+                <tr><td>100元</td><td>24.1%</td><td>-1.0%</td><td>68.9%</td><td>右偏</td></tr>
+                <tr><td>110元</td><td>23.6%</td><td>-5.0%</td><td>70.3%</td><td>右偏</td></tr>
+                <tr><td>120元</td><td>22.5%</td><td>-1.9%</td><td>71.3%</td><td>右偏</td></tr>
+                <tr><td>130元</td><td>22.8%</td><td>1.5%</td><td>71.3%</td><td>右偏</td></tr>
+                <tr><td>150元</td><td>20.5%</td><td>2.6%</td><td>68.0%</td><td>右偏</td></tr>
+            </table>
+            <p><em>※ 報酬分布呈現右偏特徵，表示少數極端獲利案例拉高平均值，中位數更能反映一般情況</em></p>
+            
+            <h3>三、虧損機率統計</h3>
+            <table class="data-table">
+                <tr><th>價位</th><th>虧損<0%</th><th>虧>5%</th><th>虧>10%</th><th>虧>20%</th><th>虧>30%</th><th>風險等級</th></tr>
+                <tr><td>90元</td><td>52.1%</td><td>33.1%</td><td>12.4%</td><td class="highlight">1.5%</td><td>0.5%</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr><td>100元</td><td>54.9%</td><td>33.2%</td><td>12.4%</td><td class="highlight">1.4%</td><td>0.4%</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr><td>110元</td><td>56.0%</td><td>49.9%</td><td>24.4%</td><td class="highlight">1.4%</td><td>0.3%</td><td><span class="risk-indicator safe">極低</span></td></tr>
+                <tr><td>120元</td><td>51.9%</td><td>46.7%</td><td>42.0%</td><td class="highlight">5.4%</td><td>0.5%</td><td><span class="risk-indicator caution">低</span></td></tr>
+                <tr><td>130元</td><td>48.6%</td><td>42.6%</td><td>37.6%</td><td class="highlight">25.0%</td><td>0.9%</td><td><span class="risk-indicator warning">高</span></td></tr>
+                <tr><td>150元</td><td>45.5%</td><td>41.1%</td><td>34.9%</td><td class="highlight">24.0%</td><td>15.4%</td><td><span class="risk-indicator warning">高</span></td></tr>
+            </table>
+            
+            <div class="insight-box warning">
+                <div class="title">🔑 關鍵發現</div>
+                <ul>
+                    <li><strong>90-110元區間</strong>：虧>20%機率維持在1.4-1.5%低水位，風險報酬比達30倍以上</li>
+                    <li><strong>120元轉折點</strong>：虧>20%機率升至5.4%，風險報酬比從30倍降至8.9倍</li>
+                    <li><strong>130元風險跳升</strong>：虧>20%機率達25%，風險報酬比降至2.1倍</li>
+                    <li><strong>150元以上</strong>：虧>30%機率明顯上升（15-17%）</li>
+                </ul>
+            </div>
+        </div>
+    `;
+}
+
+function renderReport2() {
+    return `
+        <div class="research-content">
+            <h2>專題1-2：130元臨界點深度剖析</h2>
+            <p style="color:#64748b;">為什麼這個價位是風險分水嶺 ｜ 資料期間：2011-2025年 ｜ 分析樣本：760檔（首次突破130元）</p>
+            
+            <h3>一、130元買入的虧損深度分布</h3>
+            <p>130元買入共760檔，其中369檔最終虧損（佔48.6%）。</p>
+            <table class="data-table">
+                <tr><th>虧損區間</th><th>檔數</th><th>佔全部比例</th><th>佔虧損者比例</th></tr>
+                <tr><td>虧損0-5%</td><td>45</td><td>5.9%</td><td>12.2%</td></tr>
+                <tr><td>虧損5-10%</td><td>38</td><td>5.0%</td><td>10.3%</td></tr>
+                <tr><td>虧損10-15%</td><td>40</td><td>5.3%</td><td>10.8%</td></tr>
+                <tr><td>虧損15-20%</td><td>56</td><td>7.4%</td><td>15.2%</td></tr>
+                <tr class="highlight"><td>虧損20-25%</td><td>135</td><td>17.8%</td><td>36.6%</td></tr>
+                <tr><td>虧損25-30%</td><td>48</td><td>6.3%</td><td>13.0%</td></tr>
+                <tr><td>虧損>30%</td><td>7</td><td>0.9%</td><td>1.9%</td></tr>
+            </table>
+            
+            <div class="insight-box warning">
+                <div class="title">⚠️ 虧損集中在20-25%區間</div>
+                <p>在所有虧損案例中，有36.6%的虧損幅度落在20-25%區間，這反映CB價格的「收斂」特性──由於有到期還本的保護，深度虧損（超過30%）的機率相對有限（僅1.9%）。</p>
+            </div>
+            
+            <h3>二、130元買入需要多久才能解套</h3>
+            <table class="data-table">
+                <tr><th>情況</th><th>檔數</th><th>比例</th></tr>
+                <tr class="highlight"><td>曾經跌破買入價（被套）</td><td>715</td><td>94.1%</td></tr>
+                <tr><td>從未跌破買入價</td><td>45</td><td>5.9%</td></tr>
+            </table>
+            <p><strong>關鍵發現：</strong>130元買入後，高達94.1%的案例曾經歷被套的情況。</p>
+            
+            <table class="data-table">
+                <tr><th>解套天數區間</th><th>檔數</th><th>佔被套者比例</th><th>累積比例</th></tr>
+                <tr><td>1-5天</td><td>120</td><td>16.8%</td><td>16.8%</td></tr>
+                <tr><td>6-10天</td><td>59</td><td>8.3%</td><td>25.0%</td></tr>
+                <tr><td>11-20天</td><td>60</td><td>8.4%</td><td>33.4%</td></tr>
+                <tr><td>21-60天</td><td>59</td><td>8.3%</td><td>41.7%</td></tr>
+                <tr><td>超過60天</td><td>48</td><td>6.7%</td><td>48.4%</td></tr>
+                <tr class="highlight"><td>未解套</td><td>369</td><td>51.6%</td><td>100%</td></tr>
+            </table>
+            
+            <h3>三、停損策略效果比較</h3>
+            <table class="data-table">
+                <tr><th>策略</th><th>平均報酬</th><th>獲利率</th><th>虧>20%</th><th>錯殺率</th></tr>
+                <tr><td>不停損</td><td>22.8%</td><td>51.3%</td><td>25.0%</td><td>-</td></tr>
+                <tr><td>停損5%</td><td>8.3%</td><td>18.6%</td><td>0.4%</td><td>40.7%</td></tr>
+                <tr><td>停損10%</td><td>11.2%</td><td>28.0%</td><td>1.1%</td><td>34.0%</td></tr>
+                <tr class="highlight"><td>停損15%</td><td>14.4%</td><td>35.8%</td><td>4.3%</td><td>27.8%</td></tr>
+                <tr><td>停損20%</td><td>18.7%</td><td>43.7%</td><td>39.9%</td><td>18.8%</td></tr>
+            </table>
+            
+            <div class="insight-box">
+                <div class="title">💡 停損15%相對平衡</div>
+                <p>錯殺率27.8%，虧>20%機率降至4.3%，保護效果明顯（225檔免於更大虧損），平均少虧6.6%。這可能是一個值得參考的停損點設定。</p>
+            </div>
+        </div>
+    `;
+}
+
+function renderReport3() {
+    return `
+        <div class="research-content">
+            <h2>專題1-3：高價區間（150元以上）風險特性分析</h2>
+            <p style="color:#64748b;">含詳細個股案例 ｜ 資料期間：2011-2025年</p>
+            
+            <h3>一、各高價位風險統計總覽</h3>
+            <table class="data-table">
+                <tr><th>價位</th><th>樣本</th><th>獲利>0%</th><th>虧>20%</th><th>虧>30%</th><th>風險報酬比</th></tr>
+                <tr><td>150元</td><td>501</td><td>53.3%</td><td>24.0%</td><td>15.4%</td><td>2.1</td></tr>
+                <tr><td>180元</td><td>259</td><td>47.9%</td><td>25.1%</td><td>17.0%</td><td>2.1</td></tr>
+                <tr><td>200元</td><td>171</td><td>50.3%</td><td>23.4%</td><td>16.4%</td><td>2.4</td></tr>
+                <tr class="highlight"><td>250元</td><td>83</td><td>45.8%</td><td>30.1%</td><td>18.1%</td><td>1.7</td></tr>
+                <tr><td>300元</td><td>35</td><td>48.6%</td><td>25.7%</td><td>17.1%</td><td>1.9</td></tr>
+            </table>
+            
+            <div class="insight-box warning">
+                <div class="title">🔑 核心發現</div>
+                <ul>
+                    <li><strong>150-200元風險結構相似</strong>：虧>20%機率穩定在23-25%，風險報酬比約2.1-2.4</li>
+                    <li><strong>250元是另一風險臨界點</strong>：虧>20%機率跳升至30%，風險報酬比降至1.7</li>
+                    <li><strong>坐電梯現象嚴重</strong>：約4%的200元以上買入案例曾獲利50%以上卻最終虧損</li>
+                </ul>
+            </div>
+            
+            <h3>二、坐電梯慘案（曾獲利≥50%但最終虧損）</h3>
+            <p>這些案例曾經大賺但未及時獲利了結，最終由盈轉虧：</p>
+            <table class="data-table">
+                <tr><th>CB名稱</th><th>買入價</th><th>曾最高獲利</th><th>最終報酬</th><th>落差</th></tr>
+                <tr><td>波若威一</td><td>203元</td><td>+98.0%</td><td>-42.4%</td><td class="highlight">140.4%</td></tr>
+                <tr><td>鈺緯一</td><td>203元</td><td>+75.4%</td><td>-32.5%</td><td>107.9%</td></tr>
+                <tr><td>漢磊一</td><td>212元</td><td>+86.8%</td><td>-9.9%</td><td>96.7%</td></tr>
+                <tr><td>佰研二</td><td>200元</td><td>+86.5%</td><td>-9.5%</td><td>96.0%</td></tr>
+            </table>
+            <p><em>※ 波若威一最為典型：曾獲利98%卻最終虧損42%，落差高達140%</em></p>
+            
+            <h3>三、產業別績效分析（200元以上買入）</h3>
+            <table class="data-table">
+                <tr><th>產業</th><th>樣本</th><th>獲利率</th><th>虧>20%</th><th>風險評估</th></tr>
+                <tr><td>化工</td><td>4</td><td>75.0%</td><td>0.0%</td><td><span class="risk-indicator safe">最佳</span></td></tr>
+                <tr><td>航運業</td><td>6</td><td>83.3%</td><td>0.0%</td><td><span class="risk-indicator safe">佳</span></td></tr>
+                <tr><td>電腦及週邊</td><td>11</td><td>81.8%</td><td>0.0%</td><td><span class="risk-indicator safe">佳</span></td></tr>
+                <tr><td>半導體</td><td>17</td><td>35.3%</td><td>41.2%</td><td><span class="risk-indicator warning">高風險</span></td></tr>
+                <tr><td>電子零組件</td><td>27</td><td>29.6%</td><td>29.6%</td><td><span class="risk-indicator warning">高風險</span></td></tr>
+                <tr><td>觀光餐旅</td><td>3</td><td>0.0%</td><td>100%</td><td><span class="risk-indicator danger">極危險</span></td></tr>
+            </table>
+        </div>
+    `;
+}
+
+function renderReport4() {
+    return `
+        <div class="research-content">
+            <h2>專題1-4：低價區間安全邊際分析</h2>
+            <p style="color:#64748b;">資料期間：2011-2025年（15年）｜ 分析樣本：1,608檔CB完整價格軌跡</p>
+            
+            <div class="insight-box success">
+                <div class="title">📌 核心發現</div>
+                <ul>
+                    <li><strong>110元是安全邊際的關鍵門檻</strong>：110元以下買入虧>10%僅0.6-1.9%，110元以上則跳升至22-41%</li>
+                    <li><strong>100-105元是最佳安全邊際區間</strong>：虧>5%僅3.9%，虧>10%僅0.6%</li>
+                    <li><strong>破底買入獲利率達82.1%</strong>，機會稀缺但價值極高</li>
+                    <li><strong>67.3%曾漲到130的CB</strong>，之前都有110以下買點，耐心等待有價值</li>
+                </ul>
+            </div>
+            
+            <h3>一、低價區間安全邊際效果</h3>
+            <table class="data-table">
+                <tr><th>價格區間</th><th>樣本數</th><th>獲利>0%</th><th>虧>5%</th><th>虧>10%</th><th>平均最大獲利</th></tr>
+                <tr class="highlight"><td>100-105元</td><td>1,071</td><td>44.2%</td><td>3.9%</td><td>0.6%</td><td>37.7%</td></tr>
+                <tr><td>105-110元</td><td>1,222</td><td>42.0%</td><td>39.7%</td><td>1.9%</td><td>46.7%</td></tr>
+                <tr><td>110-115元</td><td>1,207</td><td>44.3%</td><td>49.5%</td><td>22.0%</td><td>50.8%</td></tr>
+                <tr><td>115-120元</td><td>1,077</td><td>45.3%</td><td>48.9%</td><td>41.2%</td><td>49.1%</td></tr>
+            </table>
+            
+            <h3>二、破底（100元以下）買入機會分析</h3>
+            <table class="data-table">
+                <tr><th>破底價位</th><th>樣本數</th><th>獲利>0%</th><th>平均最大獲利</th><th>平均最終報酬</th></tr>
+                <tr class="highlight"><td>整體破底</td><td>559</td><td>82.1%</td><td>30.1%</td><td>16.1%</td></tr>
+                <tr><td>95-100元</td><td>540</td><td>81.5%</td><td>30.1%</td><td>16.0%</td></tr>
+                <tr><td>90-95元</td><td>18</td><td>100.0%</td><td>32.4%</td><td>19.7%</td></tr>
+            </table>
+            
+            <div class="insight-box">
+                <div class="title">💡 破底買入優勢</div>
+                <ul>
+                    <li>破底買入獲利率高達82.1%，遠高於其他價位的45%左右</li>
+                    <li>90-95元買入獲利率100%，但樣本較少（18檔）需謹慎解讀</li>
+                    <li>破底機會稀缺（僅559檔，佔比約35%）但價值極高，值得耐心等待</li>
+                </ul>
+            </div>
+            
+            <h3>三、等待低價的價值分析</h3>
+            <table class="data-table">
+                <tr><th>統計項目</th><th>數據</th><th>說明</th></tr>
+                <tr><td>曾漲到130元以上</td><td>838檔</td><td>樣本母體</td></tr>
+                <tr class="highlight"><td>漲到130前曾有110以下買點</td><td>564檔</td><td>67.3%有低價機會</td></tr>
+                <tr><td>等待低價的成功率</td><td>67.3%</td><td>耐心等待有價值</td></tr>
+            </table>
+        </div>
+    `;
+}
+
+function renderReport5() {
+    return `
+        <div class="research-content">
+            <h2>專題1-2-1：CBAS拆解與主力出場預警指標</h2>
+            <p style="color:#64748b;">從布局到出場，主力套利軌跡的數據追蹤 ｜ 資料期間：2021-2024年 ｜ 分析樣本：597檔CB ｜ CBAS交易筆數：100,344筆</p>
+            
+            <h3>一、CBAS拆解時點分析</h3>
+            <p>分析CBAS累計拆解達80%時的CB狀態：</p>
+            <table class="data-table">
+                <tr><th>統計項目</th><th>CB價格</th><th>餘額比例</th><th>解讀</th></tr>
+                <tr><td>平均值</td><td>121.0元</td><td>88.3%</td><td>布局中後段</td></tr>
+                <tr class="highlight"><td>中位數</td><td>114.8元</td><td>100.0%</td><td>餘額尚未減少</td></tr>
+                <tr><td>第25百分位</td><td>106.0元</td><td>-</td><td>布局初期</td></tr>
+                <tr><td>第75百分位</td><td>125.0元</td><td>-</td><td>布局末期</td></tr>
+            </table>
+            <p><em>※ 主力在CB價格105-125元區間完成大部分CBAS布局，此時餘額幾乎沒有減少</em></p>
+            
+            <h3>二、餘額減少各階段的CB價格</h3>
+            <table class="data-table">
+                <tr><th>餘額階段</th><th>平均價格</th><th>中位數價格</th><th>中位數天數</th><th>套利進度</th></tr>
+                <tr><td>降到90%以下</td><td>135.7元</td><td>127.0元</td><td>25天</td><td>開始出場</td></tr>
+                <tr><td>降到80%以下</td><td>141.4元</td><td>130.0元</td><td>41天</td><td>加速出場</td></tr>
+                <tr><td>降到70%以下</td><td>148.8元</td><td>133.8元</td><td>58天</td><td>大量出場</td></tr>
+                <tr class="highlight"><td>降到50%以下</td><td>161.3元</td><td>141.5元</td><td>104天</td><td>出場大半</td></tr>
+            </table>
+            <p><em>※ 主力套利出場集中在CB價格127-145元區間，從布局完成到大量出場約1-3個月</em></p>
+            
+            <h3>三、五級預警區間</h3>
+            <table class="data-table">
+                <tr><th>警示等級</th><th>觸發條件</th><th>主力狀態</th><th>建議</th></tr>
+                <tr><td><span class="risk-indicator safe">安全區</span></td><td>CB價格100-115元</td><td>CBAS拆解活躍，正在布局</td><td>可持續持有</td></tr>
+                <tr><td><span class="risk-indicator caution">黃燈區</span></td><td>價格115-125元 + CBAS>70%</td><td>布局接近完成</td><td>設定停利點</td></tr>
+                <tr><td><span class="risk-indicator warning">橘燈區</span></td><td>價格125-135元 + CBAS>80%</td><td>進入出場區域前緣</td><td>準備停利</td></tr>
+                <tr><td><span class="risk-indicator warning">紅燈區</span></td><td>價格135-150元 + 餘額減少</td><td>正在大量套利出場</td><td>分批停利</td></tr>
+                <tr><td><span class="risk-indicator danger">高危區</span></td><td>價格>150元 + 餘額減>20%</td><td>可能已出場大半</td><td>避免追高</td></tr>
+            </table>
+            
+            <h3>四、關鍵訊號識別</h3>
+            <div class="insight-box info">
+                <div class="title">🔔 值得關注的訊號</div>
+                <ul>
+                    <li><strong>訊號1</strong>：CBAS首日拆解量超過2,000張 → 市場看好此檔CB</li>
+                    <li><strong>訊號2</strong>：CBAS累計拆解達80% + CB價格仍在115元以下 → 還有上漲空間</li>
+                    <li><strong>訊號3</strong>：CBAS累計拆解達80% + CB價格已超過125元 → 開始警戒</li>
+                    <li><strong>訊號4</strong>：餘額首次減少 + CB價格在130元以上 → 主力開始出場</li>
+                    <li><strong>訊號5</strong>：餘額連續減少 + CB價格在140元以上 → 加速出場中</li>
+                </ul>
+            </div>
+            
+            <div class="insight-box">
+                <div class="title">💡 最佳賣點區間參考</div>
+                <ul>
+                    <li>主力出場集中區間為CB價格<strong>127-145元</strong></li>
+                    <li>中位數142元是餘額減半的時點，此時主力可能已出場大半</li>
+                    <li>若以「跟著主力走」為策略，CB價格達<strong>130-140元</strong>區間可開始考慮分批停利</li>
+                </ul>
+            </div>
+        </div>
+    `;
+}
+
+// ==================== 啟動 ====================
+window.onload = init;
+</script>
+
+</body>
+</html>
