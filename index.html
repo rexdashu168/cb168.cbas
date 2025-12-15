@@ -313,11 +313,12 @@
     
     <div class="content-section">
         <div class="section-header">
-            <div class="section-title"><span class="icon">🔥</span> 今日CBAS交易熱門</div>
+            <div class="section-title"><span class="icon">🔥</span> 掛牌中CB拆解熱門（累計）</div>
             <div class="period-tabs">
-                <div class="period-tab active" onclick="setOverviewPeriod('today')">今日</div>
-                <div class="period-tab" onclick="setOverviewPeriod('week')">本週</div>
-                <div class="period-tab" onclick="setOverviewPeriod('month')">本月</div>
+                <div class="period-tab active" onclick="setOverviewPeriod(10)">近10日</div>
+                <div class="period-tab" onclick="setOverviewPeriod(30)">近30日</div>
+                <div class="period-tab" onclick="setOverviewPeriod(60)">近60日</div>
+                <div class="period-tab" onclick="setOverviewPeriod(120)">近120日</div>
             </div>
         </div>
         <div id="todayCbasRanking"></div>
@@ -403,10 +404,10 @@
         <div class="section-header">
             <div class="section-title"><span class="icon">🏆</span> 名目本金排行榜</div>
             <div class="period-tabs">
-                <div class="period-tab active" onclick="setRankingPeriod('all')">全部</div>
+                <div class="period-tab" onclick="setRankingPeriod('all')">全部</div>
+                <div class="period-tab active" onclick="setRankingPeriod('listed')">🟢 掛牌中</div>
                 <div class="period-tab" onclick="setRankingPeriod('2025')">2025</div>
                 <div class="period-tab" onclick="setRankingPeriod('2024')">2024</div>
-                <div class="period-tab" onclick="setRankingPeriod('2023')">2023</div>
             </div>
         </div>
         <div class="ranking-list" id="notionalRanking"></div>
@@ -414,7 +415,7 @@
 
     <div class="content-section">
         <div class="section-header">
-            <div class="section-title"><span class="icon">🔥</span> 權利金排行榜</div>
+            <div class="section-title"><span class="icon">🔥</span> 權利金排行榜（掛牌中）</div>
         </div>
         <div class="ranking-list" id="premiumRanking"></div>
     </div>
@@ -431,7 +432,9 @@
         </div>
 
         <div class="quick-filters">
-            <div class="quick-filter active" onclick="setPriceFilter('all')">全部 <span class="count" id="priceAllCount">-</span></div>
+            <div class="quick-filter" onclick="setPriceFilter('all')">全部 <span class="count" id="priceAllCount">-</span></div>
+            <div class="quick-filter listed-filter active" onclick="setPriceFilter('listed')" style="background:rgba(22,163,74,0.1);border-color:#16a34a;">🟢 掛牌中 <span class="count" id="listedCount">-</span></div>
+            <div class="quick-filter delisted-filter" onclick="setPriceFilter('delisted')" style="background:rgba(148,163,184,0.1);border-color:#94a3b8;">⚫ 已下市 <span class="count" id="delistedCount">-</span></div>
             <div class="quick-filter" onclick="setPriceFilter('discount')">🔥 折價 <span class="count" id="discountCount">-</span></div>
             <div class="quick-filter" onclick="setPriceFilter('lowPremium')">💎 低溢價 <span class="count" id="lowPremiumCount">-</span></div>
             <div class="quick-filter" onclick="setPriceFilter('hasCbas')">🔄 有CBAS <span class="count" id="hasCbasCount">-</span></div>
@@ -483,6 +486,12 @@
             <div class="search-box">
                 <input type="text" class="search-input" id="kanbanSearch" placeholder="搜尋CB代號或名稱..." oninput="filterKanbanTable()">
             </div>
+        </div>
+
+        <div class="quick-filters">
+            <div class="quick-filter" onclick="setKanbanFilter('all')">全部 <span class="count" id="kanbanAllCount">-</span></div>
+            <div class="quick-filter listed-filter active" onclick="setKanbanFilter('listed')" style="background:rgba(22,163,74,0.1);border-color:#16a34a;">🟢 掛牌中 <span class="count" id="kanbanListedCount">-</span></div>
+            <div class="quick-filter delisted-filter" onclick="setKanbanFilter('delisted')" style="background:rgba(148,163,184,0.1);border-color:#94a3b8;">⚫ 已下市 <span class="count" id="kanbanDelistedCount">-</span></div>
         </div>
 
         <div class="table-container">
@@ -589,15 +598,16 @@ let CBAS_PERIOD = 'all';
 let CBAS_SORT = { field: 'date', dir: 'desc' };
 let CBAS_PAGE = { current: 1, size: 50 };
 
-let PRICE_FILTER = 'all';
+let PRICE_FILTER = 'listed';  // 預設只顯示掛牌中
 let PRICE_SORT = { field: 'code', dir: 'asc' };
 let PRICE_PAGE = { current: 1, size: 50 };
 
+let KANBAN_FILTER = 'listed';  // 預設只顯示掛牌中
 let KANBAN_SORT = { field: 'code', dir: 'asc' };
 let KANBAN_PAGE = { current: 1, size: 50 };
 
-let OVERVIEW_PERIOD = 'today';
-let RANKING_PERIOD = 'all';
+let OVERVIEW_PERIOD = 10;  // 預設近10日
+let RANKING_PERIOD = 'listed';  // 預設顯示掛牌中
 
 const currentYear = new Date().getFullYear();
 
@@ -1137,58 +1147,64 @@ function renderOverview() {
     renderCbasMarketStats();
 }
 
-function setOverviewPeriod(period) {
-    OVERVIEW_PERIOD = period;
+function setOverviewPeriod(days) {
+    OVERVIEW_PERIOD = days;
+    const labels = { 10: '近10日', 30: '近30日', 60: '近60日', 120: '近120日' };
     document.querySelectorAll('#overviewSection .period-tab').forEach(el => {
-        el.classList.toggle('active', el.textContent.includes(
-            period === 'today' ? '今日' : period === 'week' ? '本週' : '本月'
-        ));
+        el.classList.toggle('active', el.textContent === labels[days]);
     });
     renderTodayCbasRanking();
 }
 
 function renderTodayCbasRanking() {
-    let records = [];
+    // 計算截止日期
+    const now = new Date();
+    const cutoff = new Date(now.setDate(now.getDate() - OVERVIEW_PERIOD));
+    const cutoffNum = parseInt(cutoff.toISOString().slice(0,10).replace(/-/g, ''));
     
-    if (OVERVIEW_PERIOD === 'today' && META.latestCbasDate) {
-        records = DB.cbasDaily[META.latestCbasDate] || [];
-    } else {
-        // 本週或本月
-        const now = new Date();
-        let cutoff;
-        if (OVERVIEW_PERIOD === 'week') {
-            cutoff = new Date(now.setDate(now.getDate() - 7));
-        } else {
-            cutoff = new Date(now.setMonth(now.getMonth() - 1));
-        }
-        const cutoffNum = parseInt(cutoff.toISOString().slice(0,10).replace(/-/g, ''));
-        
-        Object.values(DB.cbasDaily).forEach(dayRecords => {
-            dayRecords.forEach(r => {
-                if (r.dateNum >= cutoffNum) records.push(r);
-            });
-        });
-    }
-    
-    // 彙總同一CB的資料
+    // 彙總該期間內的CBAS資料（只統計掛牌中的CB）
     const summary = {};
-    records.forEach(r => {
-        if (!summary[r.code]) {
-            summary[r.code] = { code: r.code, name: r.name, notional: 0, trades: 0, premiumSum: 0, count: 0 };
-        }
-        summary[r.code].notional += r.notional;
-        summary[r.code].trades += r.trades;
-        summary[r.code].premiumSum += r.premiumAvg * r.trades;
-        summary[r.code].count += r.trades;
+    Object.values(DB.cbasDaily).forEach(dayRecords => {
+        dayRecords.forEach(r => {
+            if (r.dateNum < cutoffNum) return;
+            if (!DB.listedCodes.has(r.code)) return;  // 只統計掛牌中
+            
+            if (!summary[r.code]) {
+                summary[r.code] = { 
+                    code: r.code, 
+                    name: r.name, 
+                    notional: 0, 
+                    trades: 0, 
+                    premiumSum: 0,
+                    days: new Set(),
+                    latestDate: r.date
+                };
+            }
+            summary[r.code].notional += r.notional;
+            summary[r.code].trades += r.trades;
+            summary[r.code].premiumSum += r.premiumAvg * r.trades;
+            summary[r.code].days.add(r.date);
+            if (r.date > summary[r.code].latestDate) {
+                summary[r.code].latestDate = r.date;
+            }
+        });
     });
     
-    const sorted = Object.values(summary).sort((a, b) => b.notional - a.notional).slice(0, 10);
+    // 計算平均權利金並排序
+    const sorted = Object.values(summary)
+        .map(item => ({
+            ...item,
+            avgPremium: item.trades > 0 ? item.premiumSum / item.trades : 0,
+            activeDays: item.days.size
+        }))
+        .sort((a, b) => b.notional - a.notional)
+        .slice(0, 10);
     
     if (sorted.length === 0) {
         document.getElementById('todayCbasRanking').innerHTML = `
             <div class="empty-state">
                 <div class="icon">📭</div>
-                <div class="message">該期間無CBAS交易資料</div>
+                <div class="message">該期間無掛牌中CB的CBAS交易資料</div>
             </div>
         `;
         return;
@@ -1196,19 +1212,25 @@ function renderTodayCbasRanking() {
     
     document.getElementById('todayCbasRanking').innerHTML = `
         <div class="ranking-list">
-            ${sorted.map((item, i) => `
+            ${sorted.map((item, i) => {
+                const latestPrice = DB.priceLatest[item.code];
+                const priceDisplay = latestPrice ? latestPrice.close.toFixed(1) + '元' : '-';
+                return `
                 <div class="ranking-item" onclick="openDetailModal('${item.code}')">
                     <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
                     <div class="ranking-info">
                         <div class="name">${item.name}</div>
-                        <div class="code">${item.code}</div>
+                        <div class="code">${item.code} <span style="color:var(--gray);font-size:11px;">現價 ${priceDisplay}</span></div>
                     </div>
                     <div class="ranking-value">
                         <div class="main">${formatNotional(item.notional)}</div>
-                        <div class="sub">${item.trades}筆</div>
+                        <div class="sub">${item.trades}筆 / ${item.activeDays}天 / 均${item.avgPremium.toFixed(1)}元</div>
                     </div>
                 </div>
-            `).join('')}
+            `}).join('')}
+        </div>
+        <div style="text-align:center;padding:12px;font-size:12px;color:var(--gray);">
+            統計期間：近${OVERVIEW_PERIOD}日 ｜ 僅顯示掛牌中CB
         </div>
     `;
 }
@@ -1395,7 +1417,12 @@ function setRankingPeriod(period) {
 function renderCbasRanking() {
     let records = Object.values(DB.cbas).flat();
     
-    if (RANKING_PERIOD !== 'all') {
+    // 篩選條件
+    if (RANKING_PERIOD === 'listed') {
+        // 只統計掛牌中的CB
+        records = records.filter(r => DB.listedCodes.has(r.code));
+    } else if (RANKING_PERIOD !== 'all') {
+        // 按年份篩選
         records = records.filter(r => r.date.startsWith(RANKING_PERIOD));
     }
     
@@ -1405,8 +1432,11 @@ function renderCbasRanking() {
     const avgPremium = totalTrades > 0 ? 
         records.reduce((sum, r) => sum + r.premiumAvg * r.trades, 0) / totalTrades : 0;
     
+    const periodLabel = RANKING_PERIOD === 'listed' ? '掛牌中CB' : 
+                        RANKING_PERIOD === 'all' ? '全部' : RANKING_PERIOD + '年';
+    
     document.getElementById('totalNotional').textContent = formatNotional(totalNotional);
-    document.getElementById('totalNotionalInfo').textContent = `共 ${records.length} 筆交易紀錄`;
+    document.getElementById('totalNotionalInfo').textContent = `${periodLabel} 共 ${records.length} 筆`;
     document.getElementById('totalTrades').textContent = totalTrades.toLocaleString();
     document.getElementById('totalTradesInfo').textContent = `涵蓋 ${new Set(records.map(r => r.code)).size} 檔CB`;
     document.getElementById('avgPremium').textContent = avgPremium.toFixed(2) + '元';
@@ -1416,7 +1446,7 @@ function renderCbasRanking() {
     const notionalByCode = {};
     records.forEach(r => {
         if (!notionalByCode[r.code]) {
-            notionalByCode[r.code] = { code: r.code, name: r.name, notional: 0, trades: 0 };
+            notionalByCode[r.code] = { code: r.code, name: r.name, notional: 0, trades: 0, isListed: DB.listedCodes.has(r.code) };
         }
         notionalByCode[r.code].notional += r.notional;
         notionalByCode[r.code].trades += r.trades;
@@ -1424,36 +1454,44 @@ function renderCbasRanking() {
     
     const notionalRanking = Object.values(notionalByCode).sort((a, b) => b.notional - a.notional).slice(0, 15);
     
-    document.getElementById('notionalRanking').innerHTML = notionalRanking.map((item, i) => `
+    document.getElementById('notionalRanking').innerHTML = notionalRanking.map((item, i) => {
+        const latestPrice = DB.priceLatest[item.code];
+        const priceDisplay = latestPrice ? latestPrice.close.toFixed(1) + '元' : '-';
+        const statusIcon = item.isListed ? '' : '<span style="color:var(--gray);font-size:10px;">⚫</span>';
+        return `
         <div class="ranking-item" onclick="openDetailModal('${item.code}')">
             <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
             <div class="ranking-info">
-                <div class="name">${item.name}</div>
-                <div class="code">${item.code}</div>
+                <div class="name">${item.name} ${statusIcon}</div>
+                <div class="code">${item.code} ${item.isListed ? '<span style="color:var(--gray);font-size:11px;">現價 ' + priceDisplay + '</span>' : ''}</div>
             </div>
             <div class="ranking-value">
                 <div class="main">${formatNotional(item.notional)}</div>
                 <div class="sub">${item.trades}筆交易</div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
     
-    // 權利金排行
-    const premiumRanking = [...records].sort((a, b) => b.premiumAvg - a.premiumAvg).slice(0, 15);
+    // 權利金排行（只顯示掛牌中）
+    const listedRecords = Object.values(DB.cbas).flat().filter(r => DB.listedCodes.has(r.code));
+    const premiumRanking = [...listedRecords].sort((a, b) => b.premiumAvg - a.premiumAvg).slice(0, 15);
     
-    document.getElementById('premiumRanking').innerHTML = premiumRanking.map((item, i) => `
+    document.getElementById('premiumRanking').innerHTML = premiumRanking.map((item, i) => {
+        const latestPrice = DB.priceLatest[item.code];
+        const priceDisplay = latestPrice ? latestPrice.close.toFixed(1) + '元' : '-';
+        return `
         <div class="ranking-item" onclick="openDetailModal('${item.code}')">
             <div class="ranking-num ${i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : 'normal'}">${i + 1}</div>
             <div class="ranking-info">
                 <div class="name">${item.name}</div>
-                <div class="code">${item.code} | ${item.date}</div>
+                <div class="code">${item.code} | ${item.date} <span style="color:var(--gray);font-size:11px;">現價 ${priceDisplay}</span></div>
             </div>
             <div class="ranking-value">
                 <div class="main">${item.premiumAvg.toFixed(2)}元</div>
                 <div class="sub">名目本金 ${formatNotional(item.notional)}</div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 // ==================== 價格查詢 ====================
@@ -1494,7 +1532,8 @@ function getPriceFilteredData() {
         change: p.change,
         changePct: p.close > 0 ? ((p.change / (p.close - p.change)) * 100) : 0,
         volume: p.volume,
-        hasCbas: !!DB.cbas[code]
+        hasCbas: !!DB.cbas[code],
+        isListed: DB.listedCodes.has(code)
     }));
     
     // 搜尋篩選
@@ -1507,6 +1546,12 @@ function getPriceFilteredData() {
     
     // 快速篩選
     switch(PRICE_FILTER) {
+        case 'listed':
+            data = data.filter(d => d.isListed);
+            break;
+        case 'delisted':
+            data = data.filter(d => !d.isListed);
+            break;
         case 'discount':
             data = data.filter(d => d.close < 100);
             break;
@@ -1533,13 +1578,15 @@ function getPriceFilteredData() {
 
 function renderPriceTable() {
     const data = getPriceFilteredData();
-    const allData = Object.values(DB.priceLatest);
+    const allData = Object.entries(DB.priceLatest).map(([code, p]) => ({ code, close: p.close, isListed: DB.listedCodes.has(code) }));
     
     // 更新計數
     document.getElementById('priceAllCount').textContent = allData.length;
+    document.getElementById('listedCount').textContent = allData.filter(p => p.isListed).length;
+    document.getElementById('delistedCount').textContent = allData.filter(p => !p.isListed).length;
     document.getElementById('discountCount').textContent = allData.filter(p => p.close < 100).length;
     document.getElementById('lowPremiumCount').textContent = allData.filter(p => p.close >= 100 && p.close < 110).length;
-    document.getElementById('hasCbasCount').textContent = allData.filter(p => DB.cbas[Object.keys(DB.priceLatest).find(k => DB.priceLatest[k] === p)]).length;
+    document.getElementById('hasCbasCount').textContent = allData.filter(p => DB.cbas[p.code]).length;
     
     // 更新風險分布統計
     document.getElementById('riskSafeCount').textContent = allData.filter(p => p.close < 110).length;
@@ -1566,10 +1613,11 @@ function renderPriceTable() {
         const priceClass = d.close < 100 ? 'premium-low' : d.close > 120 ? 'premium-high' : '';
         const riskLevel = getPriceRiskLevel(d.close);
         const riskClass = riskLevel.level === 'safe' ? 'safe' : riskLevel.level === 'caution' ? 'caution' : riskLevel.level === 'warning' ? 'warning' : 'danger';
+        const statusIcon = d.isListed ? '' : ' <span style="color:var(--gray);font-size:10px;">⚫</span>';
         return `
             <tr class="${priceClass}" onclick="openDetailModal('${d.code}')" title="${riskLevel.tip}">
                 <td class="code">${d.code}</td>
-                <td>${d.name}</td>
+                <td>${d.name}${statusIcon}</td>
                 <td class="text-right mono" style="font-weight:600">${d.close.toFixed(2)}</td>
                 <td class="text-right mono ${changeClass}">${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}</td>
                 <td class="text-right mono ${changeClass}">${d.changePct > 0 ? '+' : ''}${d.changePct.toFixed(2)}%</td>
@@ -1600,6 +1648,15 @@ function changePricePage(delta) {
 }
 
 // ==================== 看板資訊 ====================
+function setKanbanFilter(filter) {
+    KANBAN_FILTER = filter;
+    document.querySelectorAll('#kanbanSection .quick-filter').forEach(el => {
+        el.classList.toggle('active', el.onclick.toString().includes(`'${filter}'`));
+    });
+    KANBAN_PAGE.current = 1;
+    renderKanbanTable();
+}
+
 function sortKanbanTable(field) {
     if (KANBAN_SORT.field === field) {
         KANBAN_SORT.dir = KANBAN_SORT.dir === 'asc' ? 'desc' : 'asc';
@@ -1617,8 +1674,13 @@ function filterKanbanTable() {
 
 function getKanbanFilteredData() {
     const query = document.getElementById('kanbanSearch').value.toLowerCase().trim();
-    let data = Object.values(DB.kanbanLatest);
+    let data = Object.entries(DB.kanbanLatest).map(([code, d]) => ({
+        ...d,
+        code,
+        isListed: DB.listedCodes.has(code)
+    }));
     
+    // 搜尋篩選
     if (query) {
         data = data.filter(d => 
             d.code.toLowerCase().includes(query) || 
@@ -1626,6 +1688,17 @@ function getKanbanFilteredData() {
         );
     }
     
+    // 掛牌狀態篩選
+    switch(KANBAN_FILTER) {
+        case 'listed':
+            data = data.filter(d => d.isListed);
+            break;
+        case 'delisted':
+            data = data.filter(d => !d.isListed);
+            break;
+    }
+    
+    // 排序
     data.sort((a, b) => {
         let valA = a[KANBAN_SORT.field];
         let valB = b[KANBAN_SORT.field];
@@ -1640,6 +1713,12 @@ function getKanbanFilteredData() {
 
 function renderKanbanTable() {
     const data = getKanbanFilteredData();
+    const allData = Object.entries(DB.kanbanLatest).map(([code, d]) => ({ code, isListed: DB.listedCodes.has(code) }));
+    
+    // 更新計數
+    document.getElementById('kanbanAllCount').textContent = allData.length;
+    document.getElementById('kanbanListedCount').textContent = allData.filter(d => d.isListed).length;
+    document.getElementById('kanbanDelistedCount').textContent = allData.filter(d => !d.isListed).length;
     
     const totalPages = Math.ceil(data.length / KANBAN_PAGE.size) || 1;
     if (KANBAN_PAGE.current > totalPages) KANBAN_PAGE.current = totalPages;
@@ -1657,7 +1736,7 @@ function renderKanbanTable() {
     document.getElementById('kanbanTableBody').innerHTML = pageData.map(d => `
         <tr onclick="openDetailModal('${d.code}')">
             <td class="code">${d.code}</td>
-            <td>${d.name}</td>
+            <td>${d.name} ${d.isListed ? '' : '<span style="font-size:10px;color:var(--gray);">⚫</span>'}</td>
             <td class="text-right mono" style="font-weight:600;color:var(--primary)">${d.convPrice > 0 ? d.convPrice.toFixed(2) : '-'}</td>
             <td class="hide-mobile">${d.convStart || '-'}</td>
             <td class="hide-mobile">${d.convEnd || '-'}</td>
