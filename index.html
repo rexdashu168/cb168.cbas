@@ -571,6 +571,7 @@ const DB = {
     kanban: {},         // 看板資料 {code: {convPrice, convStart, convEnd, ...}}
     kanbanLatest: {},   // 最新看板 {code: {...}}
     cbInfo: {},         // CB基本資料
+    nameToCode: {},     // 名稱到代號對照表
     listedCodes: new Set()
 };
 
@@ -615,7 +616,28 @@ async function init() {
         updateLoadStatus('載入看板資料...', 80);
         await loadKanbanData([currentYear]);
         
+        // 用看板的轉債參考價格補充 priceLatest
+        updateLoadStatus('整合資料...', 95);
+        for (const code of DB.listedCodes) {
+            const kanban = DB.kanbanLatest[code];
+            if (kanban && kanban.cbPrice > 0 && !DB.priceLatest[code]) {
+                DB.priceLatest[code] = {
+                    date: '-',
+                    dateNum: 0,
+                    code,
+                    name: kanban.name || DB.cbInfo[code]?.name || code,
+                    open: kanban.cbPrice,
+                    high: kanban.cbPrice,
+                    low: kanban.cbPrice,
+                    close: kanban.cbPrice,
+                    change: 0,
+                    volume: 0
+                };
+            }
+        }
+        
         updateLoadStatus('初始化完成', 100);
+        console.log(`最終資料: 價格${Object.keys(DB.priceLatest).length}檔, 看板${Object.keys(DB.kanbanLatest).length}檔`);
         
         setTimeout(() => {
             document.getElementById('loading').classList.add('hidden');
@@ -640,47 +662,124 @@ function showToast(msg) {
 }
 
 // ==================== 資料載入 ====================
+// 正規化名稱：處理 K/KY 差異、空格等
+function normalizeName(name) {
+    if (!name) return '';
+    let n = String(name).trim();
+    // 統一 KY 格式
+    n = n.replace(/[-]?KY$/i, 'KY').replace(/[-]?K$/i, 'K');
+    // 移除空格
+    n = n.replace(/\s+/g, '');
+    return n;
+}
+
 async function loadCbInfo() {
     try {
-        const res = await fetch('data/00_CB.xlsx');
+        const res = await fetch('00_CB.xlsx');
         if (!res.ok) return;
         const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellDates: true });
         
-        // 載入CB基本資料 (01_ALLCB基本資料)
+        // 1. 載入CB基本資料 (01_ALLCB基本資料)
         const basicSheet = wb.SheetNames.find(n => n.includes('ALLCB基本資料'));
         if (basicSheet && wb.Sheets[basicSheet]) {
             XLSX.utils.sheet_to_json(wb.Sheets[basicSheet]).forEach(r => {
                 const code = String(r['CB代號'] || '').trim();
                 if (!code || code.length < 4) return;
+                
+                const name = r['名稱'] || '';
                 DB.cbInfo[code] = {
-                    name: r['CB名稱'] || '',
+                    name,
                     stockCode: String(r['股票代號'] || '').replace(/\.0$/, ''),
-                    stockName: r['股票名稱'] || '',
-                    industry: '',
-                    guarantee: r['擔保'] || '無擔保'
+                    stockName: '',
+                    industry: r['產業分類'] || '',
+                    guarantee: r['擔保'] || '無擔保',
+                    creditRating: r['信用評等'] || '',
+                    issueSize: parseFloat(r['發行規模']) || 0,
+                    convPrice: parseFloat(r['轉換價格']) || 0,
+                    listDate: r['掛牌日期'] || '',
+                    maturityDate: r['到期日期'] || '',
+                    highPrice: parseFloat(r['掛牌最高']) || 0,
+                    lowPrice: parseFloat(r['掛牌最低']) || 0
                 };
+                
+                // 建立名稱對照表（多種變體）
+                if (name) {
+                    DB.nameToCode[name] = code;
+                    DB.nameToCode[normalizeName(name)] = code;
+                    // 處理 K 和 KY 互換
+                    if (name.endsWith('K')) {
+                        DB.nameToCode[name + 'Y'] = code;
+                    } else if (name.endsWith('KY')) {
+                        DB.nameToCode[name.slice(0, -1)] = code;
+                    }
+                }
             });
         }
         
-        // 載入產業分類 (16_產業分類)
+        // 2. 載入產業分類補充 (16_產業分類)
         const industrySheet = wb.SheetNames.find(n => n.includes('產業分類'));
         if (industrySheet && wb.Sheets[industrySheet]) {
             XLSX.utils.sheet_to_json(wb.Sheets[industrySheet]).forEach(r => {
                 const code = String(r['CB代號'] || '').trim();
                 if (code && DB.cbInfo[code]) {
-                    DB.cbInfo[code].industry = r['產業'] || '';
+                    DB.cbInfo[code].industry = r['產業'] || DB.cbInfo[code].industry;
                 }
             });
         }
         
-        // 載入掛牌中清單 (08_最新動態每週基本資料)
+        // 3. 載入掛牌中清單及最新資料 (08_最新動態每週基本資料)
         const listSheet = wb.SheetNames.find(n => n.includes('最新動態每週基本資料'));
         if (listSheet && wb.Sheets[listSheet]) {
             XLSX.utils.sheet_to_json(wb.Sheets[listSheet]).forEach(r => {
                 const code = String(r['代號'] || '').trim();
-                if (code) DB.listedCodes.add(code);
+                if (!code) return;
+                
+                DB.listedCodes.add(code);
+                
+                const name = r['名稱'] || '';
+                
+                // 同時更新/建立基本資料和看板資料
+                if (!DB.cbInfo[code]) {
+                    DB.cbInfo[code] = { name: '', stockCode: '', stockName: '', industry: '', guarantee: '' };
+                }
+                DB.cbInfo[code].name = name || DB.cbInfo[code].name;
+                DB.cbInfo[code].stockCode = String(r['轉換標的代碼'] || '').replace(/\.0$/, '');
+                DB.cbInfo[code].stockName = r['轉換標的名稱'] || '';
+                
+                // 補充名稱對照表
+                if (name) {
+                    DB.nameToCode[name] = code;
+                    DB.nameToCode[normalizeName(name)] = code;
+                }
+                
+                // 格式化日期
+                const formatDate = (val) => {
+                    if (!val) return '-';
+                    if (val instanceof Date) return val.toISOString().slice(0, 10);
+                    return String(val).slice(0, 10);
+                };
+                
+                // 更新看板資料
+                DB.kanbanLatest[code] = {
+                    code,
+                    name: name || DB.cbInfo[code].name || code,
+                    convStart: formatDate(r['轉換日期起']),
+                    convEnd: formatDate(r['轉換日期迄']),
+                    convPrice: parseFloat(r['轉換價格(元)']) || 0,
+                    putDate: formatDate(r['最近提前償還日']),
+                    putPrice: parseFloat(r['最近提前償還價格']) || 0,
+                    issueAmount: parseFloat(r['實際發行總額(百萬)']) * 1000000 || 0,
+                    balance: parseFloat(r['最新餘額(百萬)']) * 1000000 || 0,
+                    maturityDate: formatDate(r['到期日']),
+                    maturityPrice: parseFloat(r['到期價格']) || 100,
+                    couponRate: parseFloat(r['票面利率']) || 0,
+                    listDate: formatDate(r['掛牌日期']),
+                    issueDate: formatDate(r['發行日期'])
+                };
             });
         }
+        
+        console.log(`載入CB基本資料: ${Object.keys(DB.cbInfo).length}檔, 掛牌中: ${DB.listedCodes.size}檔, 名稱對照: ${Object.keys(DB.nameToCode).length}筆`);
     } catch(e) {
         console.error('載入CB基本資料失敗:', e);
     }
@@ -690,7 +789,7 @@ async function loadCbasData(years) {
     for (const year of years) {
         if (META.cbasYearsLoaded[year]) continue;
         try {
-            const res = await fetch(`data/CBAS_${year}.xlsx`);
+            const res = await fetch(`data/CBAS/CBAS_${year}.xlsx`);
             if (!res.ok) continue;
             const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
             
@@ -756,26 +855,44 @@ async function loadPriceData(years) {
     for (const year of years) {
         if (META.priceYearsLoaded[year]) continue;
         try {
-            const urls = [`data/CB_price_${year}_cleaned.xlsx`, `data/CB_price_${year}.xlsx`];
-            for (const url of urls) {
-                const res = await fetch(url);
-                if (!res.ok) continue;
-                const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+            const res = await fetch(`data/cbprice/CB_price_${year}.xlsx`);
+            if (!res.ok) continue;
+            const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+            
+            // 找所有日期工作表並按日期排序（從新到舊）
+            const dateSheets = wb.SheetNames.filter(n => /^\d{8}$/.test(n.trim())).sort().reverse();
+            
+            for (const sheetName of dateSheets) {
+                const dateStr = sheetName.trim();
+                const dateNum = parseInt(dateStr);
+                const formattedDate = `${dateStr.substring(0,4)}/${dateStr.substring(4,6)}/${dateStr.substring(6,8)}`;
                 
-                wb.SheetNames.forEach(sheetName => {
-                    if (!/^\d{8}$/.test(sheetName.trim())) return;
-                    const dateStr = sheetName.trim();
-                    const dateNum = parseInt(dateStr);
-                    const formattedDate = `${dateStr.substring(0,4)}/${dateStr.substring(4,6)}/${dateStr.substring(6,8)}`;
-                    
+                // 先讀取原始資料檢查是否有標題行
+                const rawData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+                if (rawData.length === 0) continue;
+                
+                // 檢查第一行是否為標題（包含'代號'）
+                const firstRow = rawData[0];
+                const hasHeader = firstRow && String(firstRow[0]) === '代號';
+                
+                // 處理有標題行的情況
+                if (hasHeader) {
                     XLSX.utils.sheet_to_json(wb.Sheets[sheetName]).forEach(row => {
                         const code = String(row['代號'] || '').trim();
-                        const close = parseFloat(row['收市']) || 0;
-                        if (!code || close <= 0) return;
+                        if (!code || code.length < 4) return;
                         
+                        let close = parseFloat(row['收市']);
+                        if (isNaN(close) || close <= 0) {
+                            close = parseFloat(row['明日參價']) || 0;
+                        }
+                        if (close <= 0) return;
+                        
+                        const name = row['名稱'] || DB.cbInfo[code]?.name || code;
                         const record = {
                             date: formattedDate,
                             dateNum,
+                            code,
+                            name,
                             open: parseFloat(row['開市']) || close,
                             high: parseFloat(row['最高']) || close,
                             low: parseFloat(row['最低']) || close,
@@ -787,23 +904,73 @@ async function loadPriceData(years) {
                         if (!DB.price[code]) DB.price[code] = [];
                         DB.price[code].push(record);
                         
-                        // 更新最新價格
                         if (!DB.priceLatest[code] || dateNum > DB.priceLatest[code].dateNum) {
-                            DB.priceLatest[code] = { 
-                                ...record, 
-                                name: row['名稱'] || DB.cbInfo[code]?.name || code 
-                            };
+                            DB.priceLatest[code] = { ...record };
                         }
                         
-                        if (!META.latestPriceDate || dateNum > META.latestPriceDate) {
-                            META.latestPriceDate = dateNum;
+                        // 補充名稱對照表
+                        if (name) {
+                            DB.nameToCode[name] = code;
+                            DB.nameToCode[normalizeName(name)] = code;
                         }
                     });
-                });
+                } else {
+                    // 處理無標題行的情況：第一欄是名稱
+                    // 欄位: 0=名稱, 1=收市, 2=漲跌, 3=開市, 4=最高, 5=最低, 6=筆數, 7=單位, 8=金額, 9=明日參價
+                    rawData.forEach(row => {
+                        const name = String(row[0] || '').trim();
+                        if (!name || name === '代號' || name === '名稱') return;
+                        
+                        // 用名稱反查代號
+                        let code = DB.nameToCode[name] || DB.nameToCode[normalizeName(name)];
+                        
+                        // 如果還是找不到，嘗試更多變體
+                        if (!code) {
+                            // 嘗試去掉或加上 KY
+                            if (name.endsWith('KY')) {
+                                code = DB.nameToCode[name.slice(0, -1)] || DB.nameToCode[name.slice(0, -2) + 'K'];
+                            } else if (name.endsWith('K')) {
+                                code = DB.nameToCode[name + 'Y'];
+                            }
+                        }
+                        
+                        if (!code) return;
+                        
+                        let close = parseFloat(row[1]);
+                        if (isNaN(close) || close <= 0) {
+                            close = parseFloat(row[9]) || 0;  // 明日參價
+                        }
+                        if (close <= 0) return;
+                        
+                        const record = {
+                            date: formattedDate,
+                            dateNum,
+                            code,
+                            name: DB.cbInfo[code]?.name || name,
+                            open: parseFloat(row[3]) || close,
+                            high: parseFloat(row[4]) || close,
+                            low: parseFloat(row[5]) || close,
+                            close,
+                            change: parseFloat(row[2]) || 0,
+                            volume: parseFloat(row[7]) || 0
+                        };
+                        
+                        if (!DB.price[code]) DB.price[code] = [];
+                        DB.price[code].push(record);
+                        
+                        if (!DB.priceLatest[code] || dateNum > DB.priceLatest[code].dateNum) {
+                            DB.priceLatest[code] = { ...record };
+                        }
+                    });
+                }
                 
-                META.priceYearsLoaded[year] = true;
-                break;
+                if (!META.latestPriceDate || dateNum > META.latestPriceDate) {
+                    META.latestPriceDate = dateNum;
+                }
             }
+            
+            META.priceYearsLoaded[year] = true;
+            console.log(`載入價格資料 ${year}: ${dateSheets.length}個交易日, 共${Object.keys(DB.priceLatest).length}檔`);
         } catch(e) {
             console.error(`載入價格 ${year}資料失敗:`, e);
         }
@@ -814,7 +981,7 @@ async function loadKanbanData(years) {
     for (const year of years) {
         if (META.kanbanYearsLoaded[year]) continue;
         try {
-            const res = await fetch(`data/CB_kanban_${year}.xlsx`);
+            const res = await fetch(`data/Kanban/CB_kanban_${year}.xlsx`);
             if (!res.ok) continue;
             const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellDates: true });
             
@@ -823,6 +990,8 @@ async function loadKanbanData(years) {
             if (dateSheets.length === 0) continue;
             
             const latestSheet = dateSheets[0];
+            const latestDateNum = parseInt(latestSheet);
+            
             XLSX.utils.sheet_to_json(wb.Sheets[latestSheet]).forEach(row => {
                 const code = String(row['債券代碼'] || '').trim();
                 if (!code || code.length < 4) return;
@@ -836,7 +1005,7 @@ async function loadKanbanData(years) {
                     return String(val).slice(0, 10);
                 };
                 
-                DB.kanbanLatest[code] = {
+                const record = {
                     code,
                     name: row['債券簡稱'] || DB.cbInfo[code]?.name || code,
                     convStart: formatDate(row['轉換起日']),
@@ -851,11 +1020,35 @@ async function loadKanbanData(years) {
                     balance: parseFloat(row['上月底發行餘額']) || 0,
                     cbPrice: parseFloat(row['轉債參考價格']) || 0,
                     stockPrice: parseFloat(row['轉換標的股票價格']) || 0,
-                    couponRate: parseFloat(row['票面利率']) || 0
+                    couponRate: parseFloat(row['票面利率']) || 0,
+                    dateNum: latestDateNum
                 };
+                
+                // 只更新較新的資料
+                if (!DB.kanbanLatest[code] || latestDateNum > (DB.kanbanLatest[code].dateNum || 0)) {
+                    // 保留 00_CB.xlsx 的補充資料
+                    const existing = DB.kanbanLatest[code] || {};
+                    DB.kanbanLatest[code] = {
+                        ...existing,
+                        ...record,
+                        // 如果看板沒有某些欄位，保留原有的
+                        maturityDate: existing.maturityDate || '-',
+                        maturityPrice: existing.maturityPrice || 100,
+                        listDate: existing.listDate || '-',
+                        issueDate: existing.issueDate || '-'
+                    };
+                }
+                
+                // 同步更新 cbInfo
+                if (!DB.cbInfo[code]) {
+                    DB.cbInfo[code] = { name: record.name, stockCode: '', stockName: '', industry: '', guarantee: '' };
+                } else {
+                    DB.cbInfo[code].name = DB.cbInfo[code].name || record.name;
+                }
             });
             
             META.kanbanYearsLoaded[year] = true;
+            console.log(`載入看板資料 ${year}: ${latestSheet}`);
         } catch(e) {
             console.error(`載入看板 ${year}資料失敗:`, e);
         }
@@ -1470,7 +1663,7 @@ function renderKanbanTable() {
             <td class="hide-mobile">${d.convEnd || '-'}</td>
             <td class="hide-mobile">${d.putDate || '-'}</td>
             <td class="text-right mono hide-mobile">${d.putPrice > 0 ? d.putPrice.toFixed(2) : '-'}</td>
-            <td class="text-right mono">${d.balance > 0 ? formatNotional(d.balance * 100000000) : '-'}</td>
+            <td class="text-right mono">${d.balance > 0 ? formatNotional(d.balance) : '-'}</td>
             <td class="text-right mono">${d.cbPrice > 0 ? d.cbPrice.toFixed(2) : '-'}</td>
             <td class="text-right mono">${d.stockPrice > 0 ? d.stockPrice.toFixed(2) : '-'}</td>
         </tr>
